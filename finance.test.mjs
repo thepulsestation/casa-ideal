@@ -89,7 +89,7 @@ test('ICF replaces own contribution, remains debt, and does not invent 250000 ca
 });
 
 test('full financing at deed still requires money for deposit before deed', () => {
-  const result = calculateScenario({ tax: { buyers: youngBuyers }, icf: { enabled: true }, familyLoan: { enabled: true, amount: 12500, rate: 8, years: 7 }, cash: { savings: 0, depositPercent: 0.1, familyLoanAvailableBeforeDeposit: false } });
+  const result = calculateScenario({ tax: { buyers: youngBuyers }, icf: { enabled: true }, familyLoan: { enabled: true, amount: 12500, rate: 8, years: 7, extraBuffer: 0 }, cash: { savings: 0, depositPercent: 0.1, familyLoanAvailableBeforeDeposit: false } });
   assert.equal(result.cash.fundingGap, 0);
   assert.equal(result.cash.beforeMortgageGap, 25000);
   assert.equal(result.cash.closingNetPayment, -12500);
@@ -97,11 +97,11 @@ test('full financing at deed still requires money for deposit before deed', () =
 });
 
 test('auto-sized mother loan is capped, and own upfront fee is financed once', () => {
-  const result = calculateScenario({ familyLoan: { enabled: true, rate: 8, years: 10, originationFeePercent: 1 }, cash: { savings: 20000 } });
+  const result = calculateScenario({ familyLoan: { enabled: true, rate: 8, years: 10, originationFeePercent: 1, extraBuffer: 0 }, cash: { savings: 20000 } });
   close(result.familyLoan.principal, 55000 / 0.99);
   close(result.cash.fundingGap, 0);
   assert.ok(result.budget.familyLoanMonthly > 0);
-  const capped = calculateScenario({ familyLoan: { enabled: true, rate: 8, years: 10 } });
+  const capped = calculateScenario({ familyLoan: { enabled: true, rate: 8, years: 10, extraBuffer: 0 } });
   assert.equal(capped.familyLoan.principal, 60000);
   assert.equal(capped.cash.fundingGap, 15000);
 });
@@ -216,7 +216,7 @@ test('automatic bank loan grosses up gift tax and notary fee deterministically',
   const input = {
     tax: { buyers: youngBuyers }, icf: { enabled: true },
     purchaseCosts: { other: 5000 },
-    familyLoan: { enabled: true, rate: 8, years: 7 },
+    familyLoan: { enabled: true, rate: 8, years: 7, extraBuffer: 0 },
     motherTransfer: { mode: 'gift', giftNotaryCost: 300 },
   };
   const result = calculateScenario(input);
@@ -490,6 +490,76 @@ test('legacy current-only utility inputs become canonical shared costs without l
   const independent = calculateScenario({ budget: { sharedLivingCosts: false, currentUtilitiesMonthly: 180 } });
   assert.equal(independent.budget.utilitiesMonthly, 0);
   assert.equal(independent.budget.currentUtilitiesMonthly, 180);
+});
+
+test('automatic mother loan adds the requested buffer once above acquisition need', () => {
+  const r = calculateScenario({ purchasePrice: 200000, tax: { buyers: youngBuyers }, familyLoan: { enabled: true, rate: 5, years: 10, assumedTerms: true } });
+  assert.equal(r.cash.priceContribution + r.tax.total, 50000);
+  assert.equal(r.familyLoan.principal, 53000);
+  assert.equal(r.cash.familyExtraBuffer, 3000);
+  assert.equal(r.cash.reserve, 0);
+  assert.equal(r.cash.totalReserve, 3000);
+  assert.equal(r.cash.totalRequired, 53000);
+  assert.equal(r.cash.fundingGap, 0);
+  assert.equal(r.cash.totalAcquisitionCost, 210000);
+  close(r.familyLoan.monthlyPayment, monthlyPayment(53000, 5, 10));
+  close(r.timeline.find((item) => item.id === 'after').balance, 3000);
+  assert.equal(r.stress.reserveAfterUnexpectedCost, 0);
+  assert.equal(r.familyLoan.termsAssumed, true);
+  assert.equal(r.budget.assumedLoanTerms, true);
+  assert.ok(r.warnings.some((warning) => warning.includes('hipótesis editable')));
+});
+
+test('purchase reserve and extra loan buffer stay separate without increasing acquisition cost twice', () => {
+  const r = calculateScenario({ purchasePrice: 200000, tax: { buyers: youngBuyers }, purchaseCosts: { reserve: 2000 }, familyLoan: { enabled: true, rate: 5, years: 10 } });
+  assert.equal(r.familyLoan.principal, 55000);
+  assert.equal(r.cash.reserve, 2000);
+  assert.equal(r.cash.familyExtraBuffer, 3000);
+  assert.equal(r.cash.totalReserve, 5000);
+  assert.equal(r.cash.totalAcquisitionCost, 210000);
+  assert.equal(r.cash.totalRequired, 55000);
+  assert.equal(r.stress.reserveAfterUnexpectedCost, 2000);
+  close(r.timeline.find((item) => item.id === 'after').balance, 5000);
+  const otherDeposit = calculateScenario({ purchasePrice: 200000, tax: { buyers: youngBuyers }, purchaseCosts: { reserve: 2000 }, cash: { depositPercent: 0.05 }, familyLoan: { enabled: true, rate: 5, years: 10 } });
+  assert.equal(otherDeposit.familyLoan.principal, r.familyLoan.principal);
+  assert.equal(otherDeposit.cash.totalRequired, r.cash.totalRequired);
+});
+
+test('automatic buffer honors the 60000 ceiling and is omitted when mother loan is disabled', () => {
+  const capped = calculateScenario({ familyLoan: { enabled: true, rate: 5, years: 10 } });
+  assert.equal(capped.familyLoan.principal, 60000);
+  assert.equal(capped.cash.totalRequired, 78000);
+  assert.equal(capped.cash.fundingGap, 18000);
+  assert.equal(calculateScenario().cash.familyExtraBuffer, 0);
+  const noBuffer = calculateScenario({ purchasePrice: 200000, tax: { buyers: youngBuyers }, familyLoan: { enabled: true, rate: 5, years: 10, extraBuffer: 0 } });
+  assert.equal(noBuffer.familyLoan.principal, 50000);
+});
+
+test('buffer participates once in gift tax and fee gross-up without losing deterministic rounding', () => {
+  const input = { purchasePrice: 200000, tax: { buyers: youngBuyers },
+    familyLoan: { enabled: true, rate: 5, years: 10, originationFeePercent: 1, originationFeeFixed: 100 },
+    motherTransfer: { mode: 'gift', giftNotaryCost: 300 },
+  };
+  const r = calculateScenario(input);
+  assert.equal(r.familyLoan.principal, 56808.52);
+  close(r.cash.totalRequired, 50000 + 3000 + r.familyLoan.principal * 0.05 + r.familyLoan.principal * 0.01 + 100 + 300);
+  assert.equal(r.cash.fundingGap, 0);
+  assert.ok(r.cash.surplus < 0.01);
+  assert.equal(calculateScenario(input).familyLoan.principal, r.familyLoan.principal);
+});
+
+test('legacy unknown loan terms stay unknown while receiving the new buffer default', () => {
+  const s = normalizeScenario({ familyLoan: { enabled: true, amount: null } });
+  assert.equal(s.familyLoan.extraBuffer, 3000);
+  assert.equal(s.familyLoan.rate, null);
+  assert.equal(s.familyLoan.years, null);
+  assert.equal(s.familyLoan.assumedTerms, false);
+  const r = calculateScenario(s);
+  assert.equal(r.familyLoan.monthlyPayment, null);
+  assert.equal(r.familyLoan.termsAssumed, false);
+  assert.equal(r.budget.assumedLoanTerms, false);
+  assert.equal(r.cash.familyExtraBuffer, 3000);
+  for (const familyLoan of [{ extraBuffer: -1 }, { assumedTerms: 'true' }]) assert.equal(calculateScenario({ familyLoan }).valid, false);
 });
 
 

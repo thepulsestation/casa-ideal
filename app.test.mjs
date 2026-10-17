@@ -33,7 +33,7 @@ function boot({hash='#resumen',draft=null,joined=false,scenarios=[],signupGate=n
   else if(request.pathname==='/rest/v1/household_members')body=joined?[{household_id:'synthetic-family'}]:[];
   else if(request.pathname==='/rest/v1/rpc/join_household'){assert.equal(JSON.parse(options.body).p_invite_code,CODE);joined=true;body={household_id:'synthetic-family'};}
   else if(request.pathname==='/rest/v1/rpc/create_household'){joined=true;body={household_id:'synthetic-family',invite_code:CODE};}
-  else if(request.pathname==='/rest/v1/scenarios')body=scenarios.map(data=>({id:data.id,data,created_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-02T00:00:00Z'}));
+  else if(request.pathname==='/rest/v1/scenarios'){if(options.method==='POST'){const saved=JSON.parse(options.body);body=[{id:saved.id,data:saved.data,created_at:'2026-01-01T00:00:00Z',updated_at:new Date().toISOString()}];}else body=scenarios.map(data=>({id:data.id,data,created_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-02T00:00:00Z'}));}
   else throw Error('Unexpected mock request: '+request.pathname);
   return new Response(JSON.stringify(body),{status:200});
  };
@@ -148,4 +148,46 @@ test('a budget with property provisions is approximate rather than a promised mi
  const app=boot({draft});await app.loading;
  assert.ok(app.html.includes('≈ '));assert.ok(app.html.includes('Presupuesto orientativo con provisiones'));
  assert.ok(!app.html.includes('mínimo conocido'));assert.ok(!app.html.includes('Margen máximo provisional'));
+});
+
+
+test('the home page opens the housing overview',async()=>{
+ const app=boot({hash:''});await app.loading;
+ assert.equal(app.node('page-title').textContent,'Vuestras viviendas, una al lado de la otra.');
+ assert.ok(app.html.includes('Añadir vivienda'));
+});
+test('adding and renaming a flat preserves the family budget and one saved identifier',async()=>{
+ const draft=normalizeScenario({id:'previous-home',listingDetails:{title:'Título de otra vivienda',sourceReadAt:'2026-09-01T00:00:00.000Z'},budget:{incomes:[{monthly:2130,payments:12},{monthly:1680,payments:14}],existingDebtMonthly:215,foodMonthly:465,storageMonthly:65}});
+ const app=boot({hash:'#viviendas',draft,joined:true});await app.loading;
+ app.node('add-home-btn').handlers.click();
+ for(const [id,value] of Object.entries({'save-name':'Piso de prueba','save-url':'https://example.com/piso','save-price':'175000','save-type':'flat','save-tax-mode':'used','save-images':'https://example.com/photo.jpg','save-notes':'Comunidad pendiente','save-city':'Navàs'}))app.node(id).value=value;
+ await app.node('save-form').handlers.submit({preventDefault(){}});
+ const first=app.draft();assert.equal(first.listingDetails.title,undefined);assert.equal(first.listingDetails.sourceReadAt,undefined);assert.notEqual(first.id,'previous-home');assert.equal(first.name,'Piso de prueba');assert.equal(first.propertyType,'flat');assert.equal(first.purchasePrice,175000);
+ assert.equal(first.budget.foodMonthly,465);assert.equal(first.budget.storageMonthly,65);assert.equal(first.budget.existingDebtMonthly,215);
+ assert.equal(first.familyLoan.rate,5);assert.equal(first.familyLoan.years,10);assert.equal(first.familyLoan.extraBuffer,3000);assert.equal(first.familyLoan.assumedTerms,true);
+ assert.equal(app.requests.filter(r=>r.path==='/rest/v1/scenarios'&&r.body).length,1);
+ app.node('save-btn').handlers.click();app.node('save-name').value='Piso con nombre cambiado';
+ await app.node('save-form').handlers.submit({preventDefault(){}});
+ assert.equal(app.draft().id,first.id);assert.equal(app.draft().name,'Piso con nombre cambiado');assert.equal(app.draft().budget.storageMonthly,65);
+ assert.equal(JSON.parse(memory.getItem('costes-vivienda.scenarios.v1')).scenarios.length,1);
+});
+
+
+test('adding during initial family connection waits for the restored household budget',async()=>{
+ let release;const gate=new Promise(resolve=>release=resolve);
+ const app=boot({hash:'',joined:true,scenarios:[shared('family-house')],signupGate:gate});
+ while(!app.requests.length)await tick();
+ const opening=app.node('add-home-btn').handlers.click();release();await app.loading;await opening;
+ app.node('save-name').value='Nueva vivienda';app.node('save-price').value='175000';
+ await app.node('save-form').handlers.submit({preventDefault(){}});
+ assert.deepEqual(app.draft().budget.incomes,[{monthly:2100,payments:12},{monthly:1700,payments:14}]);
+});
+
+
+test('opening edit during restoration uses the restored housing rather than the empty placeholder',async()=>{
+ let release;const gate=new Promise(resolve=>release=resolve);
+ const app=boot({hash:'#resumen',joined:true,scenarios:[shared('family-house')],signupGate:gate});
+ while(!app.requests.length)await tick();
+ const opening=app.node('save-btn').handlers.click();release();await app.loading;await opening;
+ assert.equal(app.node('save-name').value,'Casa de prueba');assert.equal(app.node('save-price').value,250000);
 });

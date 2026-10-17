@@ -45,7 +45,7 @@ export const DEFAULT_SCENARIO = Object.freeze({
     appraisal: 0, legal: 0, notary: 0, registry: 0, agency: 0,
     broker: 0, other: 0, renovations: 0, reserve: 0,
   },
-  familyLoan: { enabled: false, amount: null, maxAmount: 60000, rate: null, years: null, originationFeePercent: 0, originationFeeFixed: 0 },
+  familyLoan: { enabled: false, amount: null, maxAmount: 60000, rate: null, years: null, extraBuffer: 3000, assumedTerms: false, originationFeePercent: 0, originationFeeFixed: 0 },
   motherTransfer: {
     mode: 'family-loan',
     allocations: [
@@ -350,6 +350,8 @@ export function validateScenario(input = {}) {
   const optionalBoolean = (value, label) => { if (value !== undefined && typeof value !== 'boolean') errors.push(`${label}: debe ser verdadero o falso.`); };
   for (const [key, label] of [['name', 'Nombre de la vivienda'], ['url', 'Enlace de la vivienda'], ['notes', 'Notas de la vivienda'], ['id', 'Identificador de la vivienda']]) optionalText(s[key], label);
   optionalBoolean(s.familyLoan.enabled, 'Activación del préstamo de la madre');
+  optionalBoolean(s.familyLoan.assumedTerms, 'Condiciones hipotéticas del préstamo de la madre');
+  numeric(s.familyLoan.extraBuffer, 'Colchón adicional del préstamo de la madre');
   optionalBoolean(s.icf.enabled, 'Activación del ICF');
   optionalBoolean(s.cash.familyLoanAvailableBeforeDeposit, 'Disponibilidad del préstamo antes de las arras');
   optionalBoolean(s.stress.loseDiscounts, 'Pérdida de bonificaciones');
@@ -413,6 +415,7 @@ export function validateScenario(input = {}) {
     numeric(s.familyLoan.originationFeePercent, 'Comisión préstamo madre', 0, 100);
     numeric(s.familyLoan.originationFeeFixed, 'Comisión fija préstamo madre');
     if (s.familyLoan.rate == null || s.familyLoan.years == null) warnings.push('Falta el TIN o plazo real del préstamo de la madre: la cuota y el presupuesto quedan incompletos.');
+    if (s.familyLoan.assumedTerms) warnings.push('El interés y el plazo del préstamo de la madre son una hipótesis editable, pendiente de oferta y aprobación. La cuota calculada no es una financiación concedida.');
     if (n(s.familyLoan.amount) > n(s.familyLoan.maxAmount)) errors.push('El préstamo de la madre supera el límite introducido.');
     warnings.push('El origen de los fondos y la deuda familiar deben comunicarse al banco. Préstamo familiar y donación tienen trámites distintos.');
     if (!['family-loan', 'gift'].includes(s.motherTransfer.mode)) errors.push('Indica si la entrega de la madre es un préstamo familiar o una donación.');
@@ -520,7 +523,9 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const mortgageOriginationFee = principal * nonnegative(s.mortgage.originationFeePercent) / 100 + nonnegative(s.mortgage.originationFeeFixed);
   const purchaseFees = sum(['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker', 'other'].map((key) => cost[key]));
   const priceContribution = price - principal - icfPrincipal;
-  const beforeFamilyLoanRequired = priceContribution + tax.total + purchaseFees + mortgageOriginationFee + upfrontInsurance + cost.renovations + cost.reserve;
+  const familyExtraBuffer = s.familyLoan.enabled ? nonnegative(s.familyLoan.extraBuffer) : 0;
+  const totalReserve = cost.reserve + familyExtraBuffer;
+  const beforeFamilyLoanRequired = priceContribution + tax.total + purchaseFees + mortgageOriginationFee + upfrontInsurance + cost.renovations + totalReserve;
   const savings = nonnegative(s.cash.savings);
   const loanFeeRate = nonnegative(s.familyLoan.originationFeePercent) / 100;
   const loanFeeFixed = nonnegative(s.familyLoan.originationFeeFixed);
@@ -553,9 +558,10 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const motherTransfer = transferForAmount(familyPrincipal);
   warnings.push(...motherTransfer.warnings);
   const familyTermsKnown = !s.familyLoan.enabled || (s.familyLoan.rate != null && s.familyLoan.years != null);
+  const assumedLoanTerms = s.familyLoan.enabled && s.familyLoan.assumedTerms === true;
   const familyLoan = s.familyLoan.enabled && familyTermsKnown
-    ? { ...amortizeLoan(familyPrincipal, n(s.familyLoan.rate), n(s.familyLoan.years), { includeSchedule }), fee: familyLoanFee, termsKnown: true }
-    : { ...emptyLoan(), principal: familyPrincipal, monthlyPayment: s.familyLoan.enabled ? null : 0, totalInterest: s.familyLoan.enabled ? null : 0, totalPaid: s.familyLoan.enabled ? null : 0, fee: familyLoanFee, termsKnown: familyTermsKnown };
+    ? { ...amortizeLoan(familyPrincipal, n(s.familyLoan.rate), n(s.familyLoan.years), { includeSchedule }), fee: familyLoanFee, termsKnown: true, termsAssumed: assumedLoanTerms, extraBuffer: familyExtraBuffer }
+    : { ...emptyLoan(), principal: familyPrincipal, monthlyPayment: s.familyLoan.enabled ? null : 0, totalInterest: s.familyLoan.enabled ? null : 0, totalPaid: s.familyLoan.enabled ? null : 0, fee: familyLoanFee, termsKnown: familyTermsKnown, termsAssumed: assumedLoanTerms, extraBuffer: familyExtraBuffer };
   const totalRequired = beforeFamilyLoanRequired + familyLoanFee + motherTransfer.totalCosts;
   const availableFunds = savings + familyPrincipal;
   const depositAmount = s.cash.depositAmount == null ? price * n(s.cash.depositPercent) : n(s.cash.depositAmount);
@@ -573,7 +579,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     totalRequired, availableFunds, savings, fundingGap, surplus: Math.max(0, availableFunds - totalRequired),
     priceContribution, tax: tax.total, purchaseFees, mortgageOriginationFee, upfrontInsurance, familyLoanFee,
     motherTransferTax: motherTransfer.giftTax, motherTransferCosts: motherTransfer.totalCosts, giftNotaryCost: motherTransfer.notaryCost,
-    renovations: cost.renovations, reserve: cost.reserve, depositAmount,
+    renovations: cost.renovations, reserve: cost.reserve, familyExtraBuffer, totalReserve, depositAmount,
     beforeMortgageRequired, beforeMortgageAvailable, beforeMortgageGap, closingNetPayment,
     purchasePrice: price, mortgageFunding: principal, icfFunding: icfPrincipal, debtFunding: familyPrincipal,
     totalAcquisitionCost: price + tax.total + purchaseFees + mortgageOriginationFee + upfrontInsurance + familyLoanFee + motherTransfer.totalCosts + cost.renovations,
@@ -581,7 +587,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   };
   if (fundingGap > 0.01) warnings.push(`Faltan ${rounded(fundingGap).toFixed(2)} € para cubrir la compra y el colchón previsto.`);
   if (beforeMortgageGap > 0.01) warnings.push(`Antes de firmar la hipoteca faltan ${rounded(beforeMortgageGap).toFixed(2)} € para arras, tasación y asesoramiento.`);
-  if (cost.reserve === 0) warnings.push('No se ha reservado colchón de emergencia.');
+  if (totalReserve === 0) warnings.push('No se ha reservado colchón de emergencia.');
   if (insuranceFirstPaymentEstimate > 0) warnings.push(`Las primas recurrentes se provisionan mensualmente. Confirma cuándo se cobran: una primera prima puede exigir hasta ${rounded(insuranceFirstPaymentEstimate).toFixed(2)} € adicionales de liquidez al inicio; no está sumada a los costes de adquisición.`);
   if (s.cash.depositPercent > 0 || depositAmount > 0) warnings.push('Las arras se descuentan del precio. Confirma financiación y condiciones de devolución antes de firmarlas.');
   if (cost.notary || cost.registry || cost.agency) warnings.push('Notaría, registro y gestoría introducidos deben corresponder a la compraventa. Los gastos de constitución de la hipoteca que paga el banco no se añaden.');
@@ -662,6 +668,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     utilitiesDetailedMonthly, currentUtilitiesDetailedMonthly,
     existingDebtMonthly: existingDebt, familyExistingDebtMonthly: familyExistingDebt,
     familyLoanMonthly: familyLoan.monthlyPayment, totalDebtMonthly, totalMonthly,
+    assumedLoanTerms,
     borrowerFamilyRepaymentMonthly: motherTransfer.familyMonthlyRepayment, borrowerDebtMonthly,
     borrowerDebtRatioIncomplete: !motherTransfer.termsKnown,
     motherBankLoanMonthly: familyLoan.monthlyPayment,
@@ -697,13 +704,13 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     remainingRegular: stressIncome - stressExpenses,
     mortgageMonthly: stressMortgage, incomeDropPercent: n(s.stress.incomeDropPercent),
     expenseIncreasePercent: n(s.stress.expenseIncreasePercent), losesDiscounts: !!s.stress.loseDiscounts,
-    unexpectedCost: n(s.stress.unexpectedCost), reserveAfterUnexpectedCost: cost.reserve - n(s.stress.unexpectedCost),
+    unexpectedCost: n(s.stress.unexpectedCost), reserveAfterUnexpectedCost: totalReserve - n(s.stress.unexpectedCost),
     incomplete,
   };
   const timeline = [
     { id: 'before', label: 'Antes de la hipoteca', cashOut: beforeMortgageRequired, cashIn: beforeMortgageAvailable, balance: beforeMortgageAvailable - beforeMortgageRequired, note: 'Arras, tasación y asesoramiento; la hipoteca todavía no se desembolsa.' },
     { id: 'signing', label: 'Firma', cashOut: price - depositAmount + closingCosts, cashIn: principal + icfPrincipal + (s.cash.familyLoanAvailableBeforeDeposit ? 0 : familyPrincipal), balance: savings + familyPrincipal - beforeMortgageRequired - closingNetPayment, note: 'El precio pendiente ya descuenta las arras. Fondos ICF sujetos a resolución y desembolso.' },
-    { id: 'after', label: 'Después de la firma', cashOut: cost.renovations, cashIn: 0, balance: availableFunds - totalRequired + cost.reserve, note: 'Reformas y efectivo restante, que incluye el colchón reservado.' },
+    { id: 'after', label: 'Después de la firma', cashOut: cost.renovations, cashIn: 0, balance: availableFunds - totalRequired + totalReserve, note: 'Reformas y efectivo restante, que incluye la reserva de compra y el colchón adicional del préstamo.' },
     { id: 'monthly', label: 'Cada mes', cashOut: totalMonthly, cashIn: actualRegularIncome, balance: budget.remainingRegular, note: 'Primas anuales, IBI y mantenimiento se reparten entre 12 como provisión; sus fechas reales de cobro pueden variar.' },
     ...(icfPrincipal ? [{ id: 'icf', label: 'Después de pagar la hipoteca', cashOut: icf.deferredMonthlyPayment, cashIn: 0, balance: null, note: `ICF: devolución sin intereses durante ${icf.repaymentYears} años, según resolución y contrato.` }] : []),
   ];

@@ -4,7 +4,7 @@ Calculadora familiar de compra de vivienda en Cataluña, centrada en los escenar
 
 ## Uso
 
-Abre la aplicación, introduce el precio del anuncio y completa compra, hipoteca y presupuesto. Guarda cada casa con nombre, anuncio y notas. Los datos pendientes se muestran como tales: no se presume que un seguro desconocido o un préstamo sin oferta cueste cero.
+La vista general muestra todas las viviendas guardadas. «Añadir vivienda» permite crear una casa o piso con nombre, anuncio, precio, imágenes HTTPS y notas; «Editar vivienda» conserva su identidad y sus cálculos. El nuevo escenario reutiliza los ingresos, deudas y gastos cotidianos del hogar y reinicia los datos propios del inmueble. Completa compra, hipoteca y presupuesto. Los datos pendientes se muestran como tales: no se presume que un seguro desconocido o un préstamo sin oferta cueste cero.
 
 La vista general separa hipoteca, coste de vivir en la casa, presupuesto familiar completo, dinero inicial y momentos de pago. Las arras se descuentan del precio. Se muestran ingresos mensuales normales y media de pagas extra por separado.
 
@@ -42,3 +42,5 @@ El servidor local escucha en http://127.0.0.1:43187. GitHub Pages sirve los arch
 ## Límites de los resultados
 
 Los importes bancarios proceden de una conversación y escenarios editables, no de una oferta aprobada. La FEIN, los presupuestos y la situación fiscal de cada adquirente prevalecen. ICF se explora de forma separada del aval ICO. Los seguros, impuestos locales, reformas y gastos de vida deben presupuestarse para cada casa. Las cifras totales de deuda no incluyen treinta años de suministros, seguros o reparaciones futuras.
+
+El préstamo nuevo de la madre se prepara con una hipótesis editable de 5 % TIN a 10 años. Su importe automático cubre la necesidad de compra introducida más un colchón adicional de 3.000 €, con tope de 60.000 €. El colchón permanece como efectivo y se cuenta una sola vez, separado de otras reservas. Los escenarios antiguos mantienen sus tipos/plazos desconocidos. La comparación principal separa alquiler y compra con gastos de vivienda y compara también ambos presupuestos familiares completos. Los suministros a cero se avisan como pendientes.
