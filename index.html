@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#173f3b">
   <meta name="description" content="Entiende cuánto dinero necesitas para comprar una casa y cuánto pagarás cada mes. Compara y guarda tus escenarios familiares.">
   <title>Casa Ideal · Comprar con los números claros</title>
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css?v=2">
 </head>
 <body>
 <a class="skip" href="#main">Saltar al contenido</a>
@@ -34,6 +34,6 @@
 <div id="toast" role="status" aria-live="polite"></div>
 <dialog id="save-dialog"><form id="save-form"><div class="eyebrow">VIVIENDAS GUARDADAS</div><h2>Una casa, todos sus números.</h2><p>Guarda este escenario para compararlo o retomarlo después.</p><label>Nombre de la vivienda<input id="save-name" required maxlength="120" placeholder="Casa con jardín en…"></label><label>Enlace del anuncio<input id="save-url" type="url" placeholder="https://www.idealista.com/inmueble/…"></label><label>Notas<textarea id="save-notes" rows="3" placeholder="Reforma pendiente, dudas para la visita…" maxlength="3000"></textarea></label><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-save">Cancelar</button><button class="button primary" type="submit">Guardar escenario</button></div></form></dialog>
 <input type="file" id="import-file" accept="application/json,.json" hidden>
-<script type="module" src="./app.mjs"></script>
+<script type="module" src="./app.mjs?v=3"></script>
 </body>
 </html>
