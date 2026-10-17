@@ -1,4 +1,5 @@
 import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=5';
+import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=1';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
@@ -86,10 +87,12 @@ export function validateHousingDetails(raw = {}) {
       else listingDetails.sourceReadAt = new Date(listing.sourceReadAt).toISOString();
     }
   }
+  const commute=raw.commute===undefined?normalizeCommute({},listingDetails.city||''):raw.commute;
+  errors.push(...validateCommute(commute).errors);
   return errors.length ? { valid: false, errors: [...new Set(errors)], details: null } : {
     valid: true,
     errors: [],
-    details: { name, url, purchasePrice, propertyType, taxMode, images, notes: notes.trim(), listingDetails },
+    details: { name, url, purchasePrice, propertyType, taxMode, images, notes: notes.trim(), listingDetails,commute:normalizeCommute(commute,listingDetails.city||'') },
   };
 }
 
@@ -104,6 +107,7 @@ export function getHousingDetails(s = {}) {
     images: structuredClone(s.images ?? []),
     notes: s.notes ?? '',
     listingDetails: structuredClone(s.listingDetails ?? {}),
+    commute: normalizeCommute(s.commute,s.listingDetails?.city||''),
   };
 }
 
@@ -129,8 +133,11 @@ export function updateHousingDetails(scenario, patch = {}) {
   const previous = getHousingDetails(scenario);
   const merged = { ...previous, ...patch };
   if (isRecord(patch.listingDetails)) merged.listingDetails = { ...previous.listingDetails, ...patch.listingDetails };
+  if (isRecord(patch.commute)) merged.commute = { ...previous.commute, ...patch.commute };
   const details = requireDetails(merged);
-  return applyMetadata(structuredClone(scenario), details);
+  const updated=applyMetadata(structuredClone(scenario), details);
+  if(patch.commute===undefined&&details.listingDetails.city!==previous.listingDetails.city&&!previous.commute.originExact)updated.commute=createCommuteForProperty(details.listingDetails.city||'',previous.commute);
+  return updated;
 }
 
 /**
@@ -175,5 +182,7 @@ export function createHousingScenario(current = {}, rawDetails = {}) {
   fresh.icf = { ...structuredClone(DEFAULT_SCENARIO.icf), enabled: true, eligibilityConfirmed: false };
   fresh.stress = structuredClone(source.stress);
   fresh.financingPlanVersion = 2;
-  return applyMetadata(fresh, details);
+  const created=applyMetadata(fresh, details);
+  if(rawDetails.commute===undefined)created.commute=createCommuteForProperty(details.listingDetails.city||'',source.commute);
+  return created;
 }

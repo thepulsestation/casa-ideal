@@ -16,3 +16,49 @@
 .form-layout>div,.form-layout>aside{min-width:0}.property-top{gap:12px;flex-wrap:wrap}.property-top>div{min-width:0}.property-top h2,.housing-card h2{overflow-wrap:anywhere}.rental-comparison .table-wrap{max-width:100%;overflow-x:auto}@media(max-width:650px){.price-row{flex-wrap:wrap;gap:14px}}
 
 .housing-notes{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.property-facts{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 10px}.property-facts>span{background:#f0f4ed;border:1px solid var(--line);border-radius:8px;padding:9px 14px;color:var(--green);font-size:13px}.property-facts strong{font-size:19px;margin-right:3px}.commute-grid{display:grid;gap:20px}.commute-card{min-width:0;margin:0}.commute-card .card-head{gap:12px;flex-wrap:wrap}.commute-card h2,.commute-route{overflow-wrap:anywhere}.commute-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:20px 0}.commute-metrics>div{padding:15px;border-radius:10px;background:#f2f5ef}.commute-metrics small{display:block;color:var(--muted);margin-bottom:7px;font-size:11px}.commute-metrics strong{font-size:19px;color:var(--green)}.commute-card .inline-actions{flex-wrap:wrap}.commute-route{font-size:14px;line-height:1.8}.commute-card .fine-print{line-height:1.7}.commute-card details>summary{cursor:pointer;font-size:13px;font-weight:600}@media(max-width:650px){.commute-metrics{grid-template-columns:1fr}.commute-metrics>div{padding:12px}.commute-card .inline-actions>a{max-width:100%;white-space:normal}.property-facts{gap:6px}.property-facts>span{padding:8px 10px}}
+
+/* Photos stay in the property workspace, with a native modal viewer. */
+.housing-cover-button,.property-photo-button{display:block;position:relative;width:100%;padding:0;border:0;background:#e5eadd;overflow:hidden;text-align:left}
+.housing-cover-button{border-radius:var(--radius) var(--radius) 0 0}
+.housing-cover-button img,.property-photo-button img{transition:filter .15s}
+.housing-cover-button:hover img,.property-photo-button:hover img{filter:brightness(.92)}
+.housing-photo-count{position:absolute;right:14px;bottom:13px;background:#17312bd9;color:#fff;border-radius:7px;padding:5px 9px;font-size:12px;line-height:1.4}
+.property-photo-button{border-radius:8px}
+.property-gallery>.property-photo-button:first-child{grid-column:span 2;grid-row:span 2}
+.property-gallery>.property-photo-button:first-child img{height:268px}
+.photo-dialog{padding:0;width:min(1120px,calc(100vw - 40px));max-width:1120px;max-height:calc(100dvh - 32px);border:1px solid #ffffff24;border-radius:16px;background:#14211e;color:#fff;overflow:auto;overscroll-behavior:contain}
+.photo-dialog::backdrop{background:#06110de0;backdrop-filter:blur(6px)}
+.photo-viewer{padding:18px 20px 15px}
+.photo-toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:0 0 15px}
+.photo-toolbar h2{font-size:17px;color:#fff;overflow-wrap:anywhere}
+.photo-counter{display:block;margin-top:4px;font-size:12px;color:#c3cec8;font-variant-numeric:tabular-nums}
+.photo-close,.photo-nav{display:grid;place-items:center;flex-shrink:0;border:1px solid #ffffff40;background:#263730;color:#fff;padding:0;border-radius:50%;line-height:1}
+.photo-close{width:40px;height:40px;font-size:28px}
+.photo-stage{position:relative;display:grid;place-items:center;min-height:160px;background:#0a1310;border-radius:10px;overflow:hidden}
+.photo-main{display:block;width:100%;height:min(65vh,640px);max-height:calc(100dvh - 240px);min-height:160px;object-fit:contain}
+.photo-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;width:44px;height:44px;background:#18332bdd;font:34px/1 system-ui}
+.photo-previous{left:14px}.photo-next{right:14px}
+.photo-close:hover,.photo-nav:hover{background:#426050}
+.photo-nav:disabled{opacity:.3;cursor:default}
+.photo-error{position:absolute;left:64px;right:64px;bottom:12px;margin:0!important;padding:9px 12px;border-radius:7px;background:#263730f0;color:#e6eee9;font-size:12px;text-align:center}
+.photo-thumbnails{display:flex;justify-content:center;gap:8px;margin-top:13px;overflow-x:auto;padding:3px;scrollbar-width:thin}
+.photo-thumbnail{flex:0 0 78px;width:78px;height:58px;padding:2px;border:2px solid transparent;background:transparent;border-radius:6px;opacity:.65}
+.photo-thumbnail img{width:100%;height:100%;display:block;object-fit:cover;border-radius:2px}
+.photo-thumbnail.is-current{border-color:#d9e8b7;opacity:1}
+.photo-dialog button:focus-visible{outline:3px solid #d9e8b7;outline-offset:3px}
+@media(max-width:650px){
+ .property-gallery>.property-photo-button:first-child{grid-column:span 2;grid-row:auto}
+ .property-gallery>.property-photo-button:first-child img{height:220px}
+ .photo-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);border-radius:12px}
+ .photo-viewer{padding:12px 10px}
+ .photo-toolbar{gap:12px;padding-bottom:12px}
+ .photo-toolbar h2{font-size:14px}
+ .photo-main{height:60vh;max-height:calc(100dvh - 220px)}
+ .photo-nav{width:44px;height:44px;font-size:30px}
+ .photo-previous{left:7px}.photo-next{right:7px}
+ .photo-thumbnails{justify-content:flex-start}
+ .photo-thumbnail{flex-basis:64px;width:64px;height:50px}
+ .photo-error{left:45px;right:45px;font-size:11px}
+}
+@media(prefers-reduced-motion:reduce){.housing-cover-button img,.property-photo-button img{transition:none}}

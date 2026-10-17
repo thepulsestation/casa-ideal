@@ -325,3 +325,23 @@ test('adding two homes in local mode never reuses the first home identity',async
  const rows=JSON.parse(memory.getItem('costes-vivienda.scenarios.v1')).scenarios;
  assert.equal(rows.length,2);assert.notEqual(rows[0].id,rows[1].id);assert.deepEqual(rows.map(x=>x.name).sort(),['Primera local','Segunda local']);
 });
+
+test('the property details show rooms and the route page autosaves manual travel information',async()=>{
+ const home={...savedHome('commutes'),name:'Piso de trayectos',listingDetails:{beds:4,baths:1,surfaceM2:75,city:'Navàs'}};
+ const app=boot({joined:true,scenarios:[home]});await app.loading;
+ assert.ok(app.html.includes('habitaciones'));assert.ok(app.html.includes('75'));assert.ok(app.html.includes('data-view="trayectos"'));
+ app.navigate('#trayectos');assert.equal(app.node('page-title').textContent,'Ubicación y trayectos.');
+ const minutes=app.node('field-commute.trips.0.minutesMin');minutes.value='110';minutes.handlers.change({target:minutes});await app.flushTimers();
+ assert.equal(app.server.get('commutes').data.commute.trips[0].minutesMin,110);
+ const destination=app.node('field-commute.trips.0.destination');destination.value='Otro destino';destination.handlers.change({target:destination});await app.flushTimers();
+ const changed=app.server.get('commutes').data.commute.trips[0];assert.equal(changed.destination,'Otro destino');assert.equal(changed.minutesMin,null);assert.equal(changed.destinationConfirmed,false);
+});
+
+test('the existing Navàs record gains reference journeys and listing facts without changing its budget',async()=>{
+ const home={...savedHome('navas'),url:'https://hub.engelvoelkers.com/es/exposee/f5b1dc73-bc4a-4113-af4b-04d3686692dd',purchasePrice:175000};
+ const app=boot({joined:true,scenarios:[home]});await app.loading;await app.flushTimers();
+ const record=app.server.get('navas').data;assert.equal(record.listingDetails.beds,4);assert.equal(record.listingDetails.baths,1);
+ assert.equal(record.commute.trips[2].destinationConfirmed,true);assert.ok(record.commute.trips[2].destination.includes('Royal'));assert.ok(record.commute.trips[0].destination.includes('Rodalies'));
+ assert.equal(record.commute.trips[1].minutesMin,null);assert.equal(record.housingPresentationVersion,1);
+ assert.deepEqual(record.budget,home.budget);
+});
