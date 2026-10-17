@@ -20,6 +20,8 @@ Los borradores y viviendas se guardan en el navegador. Exportar JSON permite con
 
 La sincronización utiliza Supabase Auth, RLS y membresía por familia. La clave de `config.mjs` es publicable; no es una credencial privilegiada. Un código aleatorio de 192 bits permite unirse al espacio privado y modificar sus viviendas. El servidor conserva únicamente su hash. Compartir el código otorga acceso: conservarlo en privado para recuperar acceso en otro dispositivo. La lista se actualiza al guardar o con «Actualizar lista», sin prometer edición simultánea en tiempo real. La última versión guardada prevalece si dos familiares editan la misma vivienda.
 
+Para entrar desde otro dispositivo, guarda primero la vivienda y abre «Compartir en familia». «Copiar enlace privado» prepara un acceso con la invitación en el fragmento de la URL; no contiene nóminas ni sesiones. El dispositivo receptor entra únicamente al pulsar el botón de acceso. Al entrar, si no hay borrador local y hay una sola vivienda, se abre automáticamente; con varias se muestra la lista. Un borrador existente nunca se sustituye automáticamente. El enlace se retira de la barra de direcciones al leerlo.
+
 Esquema completo: `supabase-schema.sql`. Configuración y pruebas RLS: carpeta `supabase/` del checkout local. La sesión anónima identifica cada navegador; borrar sus datos elimina esa sesión, pero se puede volver a entrar con el código de familia.
 
 ## Desarrollo y validación
