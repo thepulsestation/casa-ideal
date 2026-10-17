@@ -55,16 +55,24 @@ export const DEFAULT_SCENARIO = Object.freeze({
     familyRate: 0, familyYears: null, giftPublicDeed: true, giftNotaryCost: 0,
   },
   budget: {
-    incomes: [], existingDebtMonthly: 0, familyIncomeMonthly: 0, familyExistingDebtMonthly: 0,
+    incomes: [],
+    householdIncomes: [
+      { id: 'mother', monthly: 0, payments: 14 },
+      { id: 'sister', monthly: 0, payments: 12 },
+    ],
+    existingDebtMonthly: 0, familyIncomeMonthly: 0, familyExistingDebtMonthly: 0,
     utilitiesMonthly: 0, carMonthly: 0, foodMonthly: 0, otherMonthly: 0,
+    utilityBreakdown: { waterMonthly: 0, energyMonthly: 0, internetMonthly: 0, otherMonthly: 0 },
     ibiAnnual: 0, wasteAnnual: 0, maintenanceAnnual: 0, communityMonthly: 0,
     externalHomeInsuranceAnnual: null, currentRent: 1014.35,
     currentUtilitiesMonthly: 0, currentOtherMonthly: 0, debtRatioLimit: 0.35,
+    currentUtilityBreakdown: { waterMonthly: 0, energyMonthly: 0, internetMonthly: 0, otherMonthly: 0 },
   },
   stress: { incomeDropPercent: 10, expenseIncreasePercent: 10, loseDiscounts: true, unexpectedCost: 3000 },
 });
 
 const COST_KEYS = ['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker', 'other', 'renovations', 'reserve'];
+const UTILITY_KEYS = ['waterMonthly', 'energyMonthly', 'internetMonthly', 'otherMonthly'];
 const FREQUENCIES = new Set(['monthly', 'quarterly', 'annual', 'upfront']);
 const isNumericPrimitive = (value) => (typeof value === 'number' || typeof value === 'string') && !(typeof value === 'string' && value.trim() === '');
 const n = (value, fallback = 0) => isNumericPrimitive(value) && Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -96,6 +104,7 @@ export function normalizeScenario(input = {}) {
     ['tax', 'buyers', 'Los compradores'],
     ['mortgage', 'discounts', 'Las bonificaciones'],
     ['budget', 'incomes', 'Los ingresos'],
+    ['budget', 'householdIncomes', 'Los ingresos de los demás convivientes'],
     ['motherTransfer', 'allocations', 'El reparto de la entrega de la madre'],
   ]) {
     const value = result[section][key];
@@ -105,6 +114,44 @@ export function normalizeScenario(input = {}) {
     } else {
       // Copy records so normalizing never aliases the caller's editable rows.
       result[section][key] = value.map((entry) => ({ ...entry }));
+    }
+  }
+  const householdRoles = ['mother', 'sister'];
+  const householdRows = result.budget.householdIncomes;
+  const identifiedHouseholdRows = new Map();
+  const positionalHouseholdRows = [];
+  householdRows.forEach((income, index) => {
+    if (householdRoles.includes(income.id)) {
+      if (identifiedHouseholdRows.has(income.id)) structureErrors.push('Cada conviviente (madre y hermana) debe aparecer una sola vez.');
+      else identifiedHouseholdRows.set(income.id, income);
+    } else if (income.id == null || income.id === '') positionalHouseholdRows.push([income, index]);
+    else structureErrors.push('Los ingresos de convivientes solo admiten los perfiles mother y sister; usa otras aportaciones para otros ingresos.');
+  });
+  positionalHouseholdRows.forEach(([income, index]) => {
+    const role = householdRoles[index];
+    if (!role) structureErrors.push('Solo se admiten dos perfiles de convivientes: madre y hermana.');
+    else if (identifiedHouseholdRows.has(role)) structureErrors.push('Hay un ingreso sin perfil que se solapa con un conviviente identificado; revisa el reparto.');
+    else identifiedHouseholdRows.set(role, income);
+  });
+  result.budget.householdIncomes = base.budget.householdIncomes.map((income) => ({
+    ...income, ...(identifiedHouseholdRows.get(income.id) || {}), id: income.id,
+  }));
+  for (const key of ['utilityBreakdown', 'currentUtilityBreakdown']) {
+    const value = result.budget[key];
+    if (!isRecord(value)) {
+      structureErrors.push(`El desglose de suministros ${key} debe ser un objeto válido.`);
+      result.budget[key] = structuredClone(base.budget[key]);
+    } else result.budget[key] = { ...base.budget[key], ...value };
+  }
+  // Modes intentionally have no public default property: older saved scenarios
+  // with one aggregate amount must retain that amount on first normalization.
+  for (const [modeKey, aggregateKey, breakdownKey] of [
+    ['utilitiesMode', 'utilitiesMonthly', 'utilityBreakdown'],
+    ['currentUtilitiesMode', 'currentUtilitiesMonthly', 'currentUtilityBreakdown'],
+  ]) {
+    if (result.budget[modeKey] === undefined) {
+      const hasDetail = UTILITY_KEYS.some((key) => nonnegative(result.budget[breakdownKey][key]) > 0);
+      result.budget[modeKey] = hasDetail || nonnegative(result.budget[aggregateKey]) === 0 ? 'detailed' : 'aggregate';
     }
   }
   if (structureErrors.length) result._structureErrors = [...new Set(structureErrors)];
@@ -374,10 +421,22 @@ export function validateScenario(input = {}) {
   for (const key of monthlyKeys) numeric(s.budget[key], `Presupuesto ${key}`, 0, Infinity, key === 'externalHomeInsuranceAnnual');
   numeric(s.budget.debtRatioLimit, 'Límite endeudamiento', 0.01, 1);
   if (!Array.isArray(s.budget.incomes)) errors.push('Los ingresos deben ser una lista.');
+  if (s.budget.incomes.length > 2) errors.push('Solo hay dos titulares hipotecarios. Añade los ingresos de madre y hermana en sus perfiles de convivientes.');
   for (const [index, income] of (Array.isArray(s.budget.incomes) ? s.budget.incomes : []).entries()) {
     numeric(income.monthly, `Ingreso ${index + 1}`);
     numeric(income.payments ?? 12, `Pagas ingreso ${index + 1}`, 1, 24);
+    if (income.id === 'mother' || income.id === 'sister') errors.push('Los ingresos de madre y hermana pertenecen al presupuesto del hogar y no al de titulares hipotecarios.');
   }
+  for (const [index, income] of s.budget.householdIncomes.entries()) {
+    numeric(income.monthly, `Ingreso conviviente ${index + 1}`);
+    numeric(income.payments ?? 12, `Pagas conviviente ${index + 1}`, 1, 24);
+    optionalText(income.id, `Identificador conviviente ${index + 1}`);
+  }
+  for (const breakdownKey of ['utilityBreakdown', 'currentUtilityBreakdown']) {
+    for (const utilityKey of UTILITY_KEYS) numeric(s.budget[breakdownKey][utilityKey], `Suministros ${breakdownKey}.${utilityKey}`);
+  }
+  if (!['aggregate', 'detailed'].includes(s.budget.utilitiesMode)) errors.push('Selecciona suministros futuros como importe conjunto o desglose.');
+  if (!['aggregate', 'detailed'].includes(s.budget.currentUtilitiesMode)) errors.push('Selecciona suministros actuales como importe conjunto o desglose.');
   numeric(s.stress.incomeDropPercent, 'Reducción de ingresos', 0, 100);
   numeric(s.stress.expenseIncreasePercent, 'Aumento de gastos', 0, 500);
   numeric(s.stress.unexpectedCost, 'Imprevisto');
@@ -504,12 +563,34 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   if (cost.notary || cost.registry || cost.agency) warnings.push('Notaría, registro y gestoría introducidos deben corresponder a la compraventa. Los gastos de constitución de la hipoteca que paga el banco no se añaden.');
   const regularIncome = sum(s.budget.incomes.map((income) => nonnegative(income.monthly)));
   const averagedIncome = sum(s.budget.incomes.map((income) => nonnegative(income.monthly) * n(income.payments, 12) / 12));
+  // Only the two borrowers' incomes above are used for the bank's ratio.
+  // Other residents improve the household budget, never mortgage qualification.
+  const householdRegularIncome = sum(s.budget.householdIncomes.map((income) => nonnegative(income.monthly)));
+  const householdAveragedIncome = sum(s.budget.householdIncomes.map((income) => nonnegative(income.monthly) * n(income.payments, 12) / 12));
+  const householdIncomeRows = s.budget.householdIncomes.map((income) => ({
+    id: income.id, monthly: nonnegative(income.monthly), payments: n(income.payments, 12),
+    averagedMonthly: nonnegative(income.monthly) * n(income.payments, 12) / 12,
+    extraPaysAnnual: nonnegative(income.monthly) * (n(income.payments, 12) - 12),
+  }));
+  // Legacy contribution is preserved once as additional money with 12 payments.
+  // No automatic copy into mother/sister rows: that would double count imports.
   const familyIncome = nonnegative(s.budget.familyIncomeMonthly);
-  const actualRegularIncome = regularIncome + familyIncome;
-  const actualAveragedIncome = averagedIncome + familyIncome;
+  const actualRegularIncome = regularIncome + householdRegularIncome + familyIncome;
+  const actualAveragedIncome = averagedIncome + householdAveragedIncome + familyIncome;
   const annualHomeCostsMonthly = (nonnegative(s.budget.ibiAnnual) + nonnegative(s.budget.wasteAnnual) + nonnegative(s.budget.maintenanceAnnual)) / 12;
   const propertyOverheadMonthly = annualHomeCostsMonthly + nonnegative(s.budget.communityMonthly) + recurringInsuranceMonthly + externalHomeMonthly;
-  const utilitiesMonthly = nonnegative(s.budget.utilitiesMonthly);
+  const utilityBreakdown = Object.fromEntries(UTILITY_KEYS.map((key) => [key, nonnegative(s.budget.utilityBreakdown[key])]));
+  const currentUtilityBreakdown = Object.fromEntries(UTILITY_KEYS.map((key) => [key, nonnegative(s.budget.currentUtilityBreakdown[key])]));
+  const utilitiesUnitemizedMonthly = nonnegative(s.budget.utilitiesMonthly);
+  const currentUtilitiesUnitemizedMonthly = nonnegative(s.budget.currentUtilitiesMonthly);
+  const utilitiesDetailedMonthly = sum(Object.values(utilityBreakdown));
+  const currentUtilitiesDetailedMonthly = sum(Object.values(currentUtilityBreakdown));
+  const utilityMode = s.budget.utilitiesMode;
+  const currentUtilityMode = s.budget.currentUtilitiesMode;
+  const utilitiesMonthly = utilityMode === 'aggregate' ? utilitiesUnitemizedMonthly : utilitiesDetailedMonthly;
+  const currentUtilitiesMonthly = currentUtilityMode === 'aggregate' ? currentUtilitiesUnitemizedMonthly : currentUtilitiesDetailedMonthly;
+  if (utilitiesUnitemizedMonthly > 0 && utilitiesDetailedMonthly > 0) warnings.push(`Se conservan un importe conjunto y un desglose de suministros futuros: solo se cuenta ${utilityMode === 'aggregate' ? 'el importe conjunto' : 'el desglose'}.`);
+  if (currentUtilitiesUnitemizedMonthly > 0 && currentUtilitiesDetailedMonthly > 0) warnings.push(`Se conservan un importe conjunto y un desglose de suministros actuales: solo se cuenta ${currentUtilityMode === 'aggregate' ? 'el importe conjunto' : 'el desglose'}.`);
   const householdMonthly = nonnegative(s.budget.carMonthly) + nonnegative(s.budget.foodMonthly) + nonnegative(s.budget.otherMonthly);
   const knownFamilyPayment = nonnegative(familyLoan.monthlyPayment);
   const existingDebt = nonnegative(s.budget.existingDebtMonthly);
@@ -523,7 +604,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const debtRatio = regularIncome > 0 ? borrowerDebtMonthly / regularIncome : null;
   const familyDebtRatio = actualRegularIncome > 0 ? totalDebtMonthly / actualRegularIncome : null;
   const currentRent = nonnegative(s.budget.currentRent);
-  const currentComparable = currentRent + nonnegative(s.budget.currentUtilitiesMonthly) + existingDebt + familyExistingDebt + householdMonthly + nonnegative(s.budget.currentOtherMonthly);
+  const currentComparable = currentRent + currentUtilitiesMonthly + existingDebt + familyExistingDebt + householdMonthly + nonnegative(s.budget.currentOtherMonthly);
   const missingEstimates = [
     ...(purchaseFees === 0 ? ['Gastos de compraventa y tasación'] : []),
     ...(nonnegative(s.budget.ibiAnnual) === 0 ? ['IBI anual'] : []),
@@ -536,10 +617,18 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const incomplete = !familyTermsKnown || !motherTransfer.termsKnown || motherTransfer.costsIncomplete || unquotedProducts.length > 0 || homeQuoteMissing || actualRegularIncome === 0 || missingEstimates.length > 0;
   const budget = {
     regularIncome, averagedIncome, familyIncomeMonthly: familyIncome,
-    actualRegularIncome, actualAveragedIncome, extraPaysAnnual: (averagedIncome - regularIncome) * 12,
+    householdRegularIncome, householdAveragedIncome, householdIncomeRows,
+    actualRegularIncome, actualAveragedIncome, extraPaysAnnual: (actualAveragedIncome - actualRegularIncome) * 12,
+    borrowerExtraPaysAnnual: (averagedIncome - regularIncome) * 12,
+    householdExtraPaysAnnual: (householdAveragedIncome - householdRegularIncome) * 12,
     mortgageOnly, homeMonthly, propertyOverheadMonthly, annualHomeCostsMonthly,
     insuranceMonthly: recurringInsuranceMonthly + externalHomeMonthly,
     upfrontInsuranceMonthlyEquivalent, utilitiesMonthly, householdMonthly,
+    utilityBreakdown, utilitiesUnitemizedMonthly, currentUtilitiesMonthly,
+    currentUtilityBreakdown, currentUtilitiesUnitemizedMonthly,
+    utilityMode, currentUtilityMode, utilitiesMode: utilityMode, currentUtilitiesMode: currentUtilityMode,
+    utilitiesAggregateMonthly: utilitiesUnitemizedMonthly, currentUtilitiesAggregateMonthly: currentUtilitiesUnitemizedMonthly,
+    utilitiesDetailedMonthly, currentUtilitiesDetailedMonthly,
     existingDebtMonthly: existingDebt, familyExistingDebtMonthly: familyExistingDebt,
     familyLoanMonthly: familyLoan.monthlyPayment, totalDebtMonthly, totalMonthly,
     borrowerFamilyRepaymentMonthly: motherTransfer.familyMonthlyRepayment, borrowerDebtMonthly,
@@ -556,7 +645,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   };
   if (actualRegularIncome === 0) warnings.push('Añade ingresos netos para valorar el presupuesto y el endeudamiento.');
   if (debtRatio != null && debtRatio > n(s.budget.debtRatioLimit)) warnings.push('La hipoteca y las deudas de los titulares superan el límite orientativo de endeudamiento elegido.');
-  if (s.familyLoan.enabled && familyIncome === 0) warnings.push('El préstamo de la madre se incluye como salida de caja familiar; no se presupone capacidad de pago ni aprobación de la madre.');
+  if (s.familyLoan.enabled && familyIncome + householdRegularIncome === 0) warnings.push('El préstamo de la madre se incluye como salida de caja familiar; no se presupone capacidad de pago ni aprobación de la madre.');
   if (familyPrincipal > 0) warnings.push('El presupuesto familiar suma una sola vez la cuota bancaria de la madre. Las devoluciones entre hijos y madre son transferencias internas; su cuota contractual sí afecta al ratio de los titulares.');
   const bonuses = {
     products,

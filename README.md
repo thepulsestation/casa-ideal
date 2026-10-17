@@ -8,6 +8,10 @@ Abre la aplicación, introduce el precio del anuncio y completa compra, hipoteca
 
 La vista general separa hipoteca, coste de vivir en la casa, presupuesto familiar completo, dinero inicial y momentos de pago. Las arras se descuentan del precio. Se muestran ingresos mensuales normales y media de pagas extra por separado.
 
+El presupuesto distingue a los dos titulares hipotecarios de las cuatro personas del hogar. Madre y hermana tienen su propia nómina y número de pagas; sus ingresos mejoran el margen familiar sin añadirse al cálculo de esfuerzo de los titulares. Las pagas extra aparecen en la media anual y como importe anual, sin contarlas como ingresos de un mes ordinario.
+
+Agua, electricidad/gas, internet y otros suministros se introducen por separado, tanto para la casa futura como para la vivienda actual. Las copias antiguas con un único total conservan ese importe. Se puede elegir total conjunto o desglose: solo se suma el modo activo y el otro se conserva como referencia, para evitar contar el mismo gasto dos veces. Alimentación y transporte son importes para todo el hogar, sin multiplicarlos por cuatro.
+
 La deuda bancaria de la madre y la entrega a sus hijos son operaciones distintas. Se comparan donación y préstamo familiar; la devolución interna entre hijos y madre no se duplica en el presupuesto consolidado. Se refleja por separado en el esfuerzo de los titulares hipotecarios. Las estimaciones fiscales requieren verificar residencia, parentesco, donaciones anteriores y los contratos definitivos.
 
 ## Datos y familia

@@ -1,0 +1,91 @@
+/** Family income and household expenses. Personal amounts live in the scenario. */
+export function renderBudget(s, result, { field, select, check, section, notice, row, euro, pct, resultSidebar }) {
+  const b = result.budget;
+  const families = [
+    { index: 0, label: 'Tu madre', hint: 'Su sueldo ayuda al presupuesto de casa; no se añade a los ingresos de los titulares hipotecarios.' },
+    { index: 1, label: 'Tu hermana', hint: 'De momento puede quedar a 0 €. Actualízalo cuando empiece a trabajar.' },
+  ];
+  const utilities = (current = false) => {
+    const modeKey = current ? 'currentUtilitiesMode' : 'utilitiesMode';
+    const aggregateKey = current ? 'currentUtilitiesMonthly' : 'utilitiesMonthly';
+    const breakdownKey = current ? 'currentUtilityBreakdown' : 'utilityBreakdown';
+    const mode = s.budget[modeKey] || 'detailed';
+    const aggregate = s.budget[aggregateKey] || 0;
+    const total = current ? b.currentUtilitiesMonthly : b.utilitiesMonthly;
+    return `<div class="form-grid">
+      <div class="full">${select('Cómo introducir los suministros' + (current ? ' actuales' : ''), 'budget.' + modeKey, [
+        ['detailed', 'Desglosar agua, electricidad/gas e internet'],
+        ['aggregate', 'Introducir un único total mensual'],
+      ])}</div>
+      ${mode === 'aggregate'
+        ? `<div class="full">${field('Total de suministros' + (current ? ' actuales' : '') + ' al mes', 'budget.' + aggregateKey, {
+          hint: 'Incluye agua, electricidad/gas e internet. Al elegir desglose, este total se conserva como referencia y deja de sumarse.',
+        })}</div>`
+        : `${field('Agua' + (current ? ' actual' : '') + ' al mes', 'budget.' + breakdownKey + '.waterMonthly', {
+          hint: 'Introduce el equivalente mensual. Por ejemplo, divide entre 2 una factura bimestral.',
+        })}${field('Electricidad y gas' + (current ? ' actuales' : '') + ' al mes', 'budget.' + breakdownKey + '.energyMonthly', {
+          hint: 'Si llegan juntos, usa el total del recibo. Si llegan separados, suma ambos aquí.',
+        })}${field('Internet' + (current ? ' actual' : '') + ' al mes', 'budget.' + breakdownKey + '.internetMonthly')}
+        ${field('Otros suministros' + (current ? ' actuales' : '') + ' al mes', 'budget.' + breakdownKey + '.otherMonthly', {
+          hint: 'Solo recibos que no hayas incluido ya en agua, electricidad/gas o internet.',
+        })}`}
+    </div>
+    ${mode === 'detailed' && aggregate > 0 ? notice(`El total anterior de ${euro(aggregate, 2)} sigue conservado como referencia. Ahora solo se suma el desglose; el total anterior no se vuelve a añadir.`, 'info') : ''}
+    <div class="breakdown">${row('Total suministros ' + (current ? 'actuales' : 'de la nueva casa') + ' / mes', euro(total, 2), 'total')}</div>`;
+  };
+
+  return `<div class="grid form-layout"><div>
+    ${section('Los dos titulares de la hipoteca', 'Vuestros sueldos se usan para el esfuerzo hipotecario. Las pagas extra se muestran aparte.', `
+      <div class="form-grid">
+        ${[0, 1].map(i => `${field(i === 0 ? 'Tu nómina neta' : 'Nómina neta de tu hermano', 'budget.incomes.' + i + '.monthly')}
+          ${select(i === 0 ? 'Tus pagas al año' : 'Pagas de tu hermano al año', 'budget.incomes.' + i + '.payments', [[12, '12 pagas'], [14, '14 pagas']])}`).join('')}
+        ${field('Límite orientativo de deuda', 'budget.debtRatioLimit', { suffix: '%', scale: 100, max: 100 })}
+      </div>
+      <div class="purchase-strip"><div><small>Titulares · mes normal</small><strong>${euro(b.regularIncome, 2)}</strong></div><div><small>Titulares · media con pagas extra</small><strong>${euro(b.averagedIncome, 2)}</strong></div></div>
+    `)}
+    ${section('Un hogar de cuatro personas', 'Tú, tu hermano, tu madre y tu hermana. Estos ingresos amplían el presupuesto del hogar.', `
+      <div class="form-grid">${families.map(person => `
+        ${field('Nómina neta · ' + person.label, 'budget.householdIncomes.' + person.index + '.monthly', { hint: person.hint })}
+        ${select('Pagas al año · ' + person.label, 'budget.householdIncomes.' + person.index + '.payments', [[12, '12 pagas'], [14, '14 pagas']])}
+      `).join('')}</div>
+      <details><summary>Otras aportaciones al hogar</summary><div class="section-gap">${field('Otras aportaciones mensuales', 'budget.familyIncomeMonthly', { hint: 'Solo ingresos adicionales. No repitas aquí las nóminas de tu madre o tu hermana.' })}</div></details>
+      <div class="purchase-strip"><div><small>Hogar · mes normal</small><strong>${euro(b.actualRegularIncome, 2)}</strong></div><div><small>Hogar · media con pagas extra</small><strong>${euro(b.actualAveragedIncome, 2)}</strong></div></div>
+      ${notice(`Las pagas extra del hogar suman ${euro(b.extraPaysAnnual)} al año. No se cuentan como ingresos de todos los meses. El sueldo de tu madre y el de tu hermana no cambian el esfuerzo de los dos titulares de la hipoteca.`, 'info')}
+    `)}
+    ${section('Lo que ya debéis', 'Cuotas de préstamos actuales, tarjetas y otras financiaciones.', `
+      <div class="form-grid">
+        ${field('Deudas mensuales de los titulares', 'budget.existingDebtMonthly', { hint: 'Sin incluir la nueva hipoteca.' })}
+        ${field('Otras deudas mensuales de mamá', 'budget.familyExistingDebtMonthly', { hint: 'Sin repetir el nuevo préstamo de compra.' })}
+      </div>
+      ${notice(`Esfuerzo de los titulares: <strong>${pct(b.debtRatio)}</strong>. Deudas frente a ingresos del hogar: <strong>${pct(b.familyDebtRatio)}</strong>. Son dos perspectivas distintas. La aprobación del banco depende de su análisis, incluida la financiación de la entrada.`, 'info')}
+    `)}
+    ${section('Agua, electricidad/gas e internet', 'Presupuesta las facturas de la nueva casa para las cuatro personas.', utilities())}
+    ${section('El resto de la vida en casa', 'Introduce importes para todo el hogar. No se multiplican por cuatro.', `
+      <div class="form-grid">
+        ${field('Alimentación mensual · todo el hogar', 'budget.foodMonthly')}
+        ${field('Coche y transporte mensual · todo el hogar', 'budget.carMonthly')}
+        ${field('Comunidad / urbanización al mes', 'budget.communityMonthly', { hint: 'Una casa también puede tener comunidad o cuotas de conservación.' })}
+        ${field('Otros gastos de vida al mes', 'budget.otherMonthly', { hint: 'Salud, ocio, educación, suscripciones…' })}
+        ${field('IBI anual', 'budget.ibiAnnual')}
+        ${field('Tasa de residuos anual', 'budget.wasteAnnual')}
+        ${field('Mantenimiento y reparaciones / año', 'budget.maintenanceAnnual', { hint: 'Una provisión para tejado, caldera, jardín, etc.' })}
+      </div>
+      <p class="fine-print">IBI, residuos, mantenimiento y seguros anuales se dividen entre 12 para reservar dinero. Eso no cambia el día de cobro de los recibos.</p>
+    `)}
+    ${section('Comparar con vuestra vida actual', 'Incluye hoy y mañana los mismos conceptos, para las mismas cuatro personas.', `
+      <div class="form-grid">${field('Alquiler mensual actual', 'budget.currentRent')}
+        ${field('Otros gastos actuales de vivienda / mes', 'budget.currentOtherMonthly', { hint: 'Solo conceptos que aún no estén en alimentación, coche u otras deudas.' })}
+      </div><div class="section-gap">${utilities(true)}</div>
+      <div class="purchase-strip"><div><small>Gasto familiar actual introducido</small><strong>${euro(b.currentComparable)}</strong></div><div><small>Gasto familiar tras comprar</small><strong>${euro(b.totalMonthly)}</strong></div></div>
+    `)}
+    ${section('Si un mes no va según lo previsto', 'Una prueba de resistencia del hogar completo, también editable.', `
+      <div class="form-grid">
+        ${field('Caída de ingresos', 'stress.incomeDropPercent', { suffix: '%', max: 100 })}
+        ${field('Aumento de gastos de vida', 'stress.expenseIncreasePercent', { suffix: '%', max: 500 })}
+        ${field('Reparación imprevista', 'stress.unexpectedCost')}
+        <div style="align-self:center">${check('Perder las bonificaciones hipotecarias', 'stress.loseDiscounts')}</div>
+      </div>
+      ${notice(`<strong>Margen mensual en este escenario: ${b.actualRegularIncome ? euro(result.stress.remainingRegular) : 'faltan ingresos'}.</strong> Colchón tras el imprevisto: ${euro(result.stress.reserveAfterUnexpectedCost)}. ${b.incomplete ? 'La prueba también está incompleta: faltan datos base.' : ''}`, result.stress.remainingRegular < 0 ? 'error' : 'info')}
+    `)}
+  </div>${resultSidebar()}</div>`;
+}

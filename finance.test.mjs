@@ -292,3 +292,108 @@ test('numeric objects and counterfeit boolean imports are rejected without coerc
   ]) assert.equal(calculateScenario(input).valid, false);
   assert.equal(calculateScenario().valid, true);
 });
+
+test('other household residents and their extra payments improve cash flow without affecting borrower ratio', () => {
+  const base = { budget: { incomes: [{ monthly: 2300, payments: 12 }, { monthly: 1700, payments: 12 }], familyIncomeMonthly: 250 } };
+  const before = calculateScenario(base);
+  const withMother = calculateScenario({ budget: { ...base.budget, householdIncomes: [
+    { id: 'mother', monthly: 1600, payments: 14 }, { id: 'sister', monthly: 0, payments: 12 },
+  ] } });
+  assert.equal(withMother.budget.regularIncome, 4000);
+  assert.equal(withMother.budget.averagedIncome, 4000);
+  assert.equal(withMother.budget.householdRegularIncome, 1600);
+  close(withMother.budget.householdAveragedIncome, 1600 * 14 / 12);
+  assert.equal(withMother.budget.actualRegularIncome, 5850);
+  close(withMother.budget.extraPaysAnnual, 3200);
+  assert.equal(withMother.budget.borrowerExtraPaysAnnual, 0);
+  close(withMother.budget.householdExtraPaysAnnual, 3200);
+  assert.equal(withMother.budget.debtRatio, before.budget.debtRatio);
+  assert.equal(withMother.budget.maximumMortgageByRatio, before.budget.maximumMortgageByRatio);
+  close(withMother.budget.remainingRegular - before.budget.remainingRegular, 1600);
+  close(withMother.stress.regularIncome - before.stress.regularIncome, 1600 * 0.9);
+  const withSister = calculateScenario({ budget: { ...base.budget, householdIncomes: [
+    { id: 'mother', monthly: 1600, payments: 14 }, { id: 'sister', monthly: 950, payments: 12 },
+  ] } });
+  assert.equal(withSister.budget.debtRatio, before.budget.debtRatio);
+  assert.equal(withSister.budget.actualRegularIncome, 6800);
+  close(withSister.budget.remainingRegular - withMother.budget.remainingRegular, 950);
+  assert.ok(withSister.budget.familyDebtRatio < withMother.budget.familyDebtRatio);
+});
+
+test('legacy aggregate utility imports retain their exact cost and are not copied into detail', () => {
+  const legacy = { budget: { utilitiesMonthly: 275, currentUtilitiesMonthly: 180, familyIncomeMonthly: 600 } };
+  const s = normalizeScenario(legacy);
+  assert.equal(s.budget.utilitiesMode, 'aggregate');
+  assert.equal(s.budget.currentUtilitiesMode, 'aggregate');
+  assert.equal(s.budget.utilityBreakdown.waterMonthly, 0);
+  assert.equal(s.budget.householdIncomes[0].monthly, 0);
+  const r = calculateScenario(s);
+  assert.equal(r.budget.utilitiesMonthly, 275);
+  assert.equal(r.budget.currentUtilitiesMonthly, 180);
+  assert.equal(r.budget.actualRegularIncome, 600);
+  assert.equal(r.budget.householdRegularIncome, 0);
+  const roundTrip = calculateScenario(JSON.parse(JSON.stringify(s)));
+  assert.equal(roundTrip.budget.utilitiesMonthly, 275);
+  assert.equal(roundTrip.budget.currentComparable, r.budget.currentComparable);
+  assert.equal(roundTrip.budget.actualRegularIncome, 600);
+});
+
+test('exclusive utility modes switch without summing or losing the inactive reference', () => {
+  const aggregate = normalizeScenario({ budget: {
+    utilitiesMonthly: 275, utilitiesMode: 'aggregate',
+    utilityBreakdown: { waterMonthly: 35, energyMonthly: 110, internetMonthly: 40, otherMonthly: 10 },
+    currentUtilitiesMonthly: 180, currentUtilitiesMode: 'detailed',
+    currentUtilityBreakdown: { waterMonthly: 25, energyMonthly: 80, internetMonthly: 30 },
+  } });
+  const a = calculateScenario(aggregate);
+  assert.equal(a.budget.utilitiesMonthly, 275);
+  assert.equal(a.budget.currentUtilitiesMonthly, 135);
+  assert.equal(a.budget.utilitiesDetailedMonthly, 195);
+  assert.ok(a.warnings.some((warning) => warning.includes('solo se cuenta el importe conjunto')));
+  const detailed = normalizeScenario({ ...aggregate, budget: { ...aggregate.budget, utilitiesMode: 'detailed', currentUtilitiesMode: 'aggregate' } });
+  const d = calculateScenario(detailed);
+  assert.equal(d.budget.utilitiesMonthly, 195);
+  assert.equal(d.budget.currentUtilitiesMonthly, 180);
+  assert.equal(d.budget.utilitiesAggregateMonthly, 275);
+  assert.equal(d.budget.currentUtilitiesDetailedMonthly, 135);
+  close(d.budget.totalMonthly - a.budget.totalMonthly, -80);
+  close(d.budget.currentComparable - a.budget.currentComparable, 45);
+  const inferred = calculateScenario({ budget: { utilitiesMonthly: 999, utilityBreakdown: { waterMonthly: 30 } } });
+  assert.equal(inferred.budget.utilityMode, 'detailed');
+  assert.equal(inferred.budget.utilitiesMonthly, 30);
+});
+
+test('new household and utility shapes reject null rows, negative bills, and invalid modes', () => {
+  for (const bad of [
+    { incomes: [{ monthly: 1 }, { monthly: 2 }, { monthly: 3 }] },
+    { incomes: [{ id: 'mother', monthly: 2000, payments: 14 }] },
+    { householdIncomes: null }, { householdIncomes: [null] },
+    { householdIncomes: [{ id: 'sister', monthly: -1, payments: 12 }] },
+    { utilityBreakdown: null }, { currentUtilityBreakdown: [] },
+    { utilityBreakdown: { waterMonthly: -1 } },
+    { utilitiesMode: 'both' }, { currentUtilitiesMode: null },
+  ]) assert.equal(calculateScenario({ budget: bad }).valid, false);
+  assert.ok(DEFAULT_SCENARIO.budget.householdIncomes.every((income) => income.monthly === 0));
+  assert.equal(Object.hasOwn(DEFAULT_SCENARIO.budget, 'utilitiesMode'), false);
+  assert.equal(normalizeScenario().budget.utilitiesMode, 'detailed');
+});
+
+test('fixed household roles are normalized by identity with complete zero defaults', () => {
+  const reverse = normalizeScenario({ budget: { householdIncomes: [
+    { id: 'sister', monthly: 850, payments: 12 }, { id: 'mother', monthly: 1750, payments: 14 },
+  ] } });
+  assert.equal(reverse.budget.householdIncomes[0].id, 'mother');
+  assert.equal(reverse.budget.householdIncomes[0].monthly, 1750);
+  assert.equal(reverse.budget.householdIncomes[1].id, 'sister');
+  assert.equal(reverse.budget.householdIncomes[1].monthly, 850);
+  const partial = normalizeScenario({ budget: { householdIncomes: [{ id: 'sister', monthly: 850 }] } });
+  assert.equal(partial.budget.householdIncomes[0].monthly, 0);
+  assert.equal(partial.budget.householdIncomes[0].payments, 14);
+  assert.equal(partial.budget.householdIncomes[1].monthly, 850);
+  assert.equal(partial.budget.householdIncomes[1].payments, 12);
+  const positional = normalizeScenario({ budget: { householdIncomes: [{ monthly: 1750 }, { monthly: 850 }] } });
+  assert.equal(positional.budget.householdIncomes[0].monthly, 1750);
+  assert.equal(positional.budget.householdIncomes[1].monthly, 850);
+  assert.equal(calculateScenario({ budget: { householdIncomes: [{ id: 'unknown', monthly: 9000 }] } }).valid, false);
+  assert.equal(calculateScenario({ budget: { householdIncomes: [{ id: 'mother', monthly: 10 }, { id: 'mother', monthly: 20 }] } }).valid, false);
+});
