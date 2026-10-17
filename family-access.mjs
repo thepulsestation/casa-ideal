@@ -1,5 +1,5 @@
 /** Pure helpers for family onboarding. No storage, Auth, network, or joins. */
-const VIEWS = new Set(['resumen', 'compra', 'hipoteca', 'presupuesto', 'viviendas', 'fuentes', 'familia', 'trayectos']);
+const VIEWS = new Set(['resumen', 'compra', 'hipoteca', 'presupuesto', 'viviendas', 'fuentes', 'familia', 'trayectos', 'comparativa']);
 const INVITE_PATTERN = /^[a-f0-9]{48}$/i;
 const SCENARIO_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);

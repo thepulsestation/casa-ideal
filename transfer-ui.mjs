@@ -1,4 +1,4 @@
-import { calculateScenario } from './finance.mjs?v=5';
+import { calculateScenario } from './finance.mjs?v=12';
 
 /** HTML only. All editable controls use the app's existing data-field binding. */
 export function renderMotherTransfer(s, result, { field, check, select, section, notice, row, euro, pct, num }) {

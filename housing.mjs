@@ -1,5 +1,5 @@
-import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=5';
-import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=1';
+import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=12';
+import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=12';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
@@ -159,8 +159,8 @@ export function createHousingScenario(current = {}, rawDetails = {}) {
   // Personal ownership shares/rates and individually confirmed buyer profiles
   // are retained exactly; property-specific tax settings start from defaults.
   fresh.tax = { ...structuredClone(DEFAULT_SCENARIO.tax), buyers: structuredClone(source.tax.buyers), mode: details.taxMode };
-  fresh.cash = { ...structuredClone(DEFAULT_SCENARIO.cash), savings: source.cash.savings };
-  fresh.purchaseCosts = Object.fromEntries(Object.keys(DEFAULT_SCENARIO.purchaseCosts).map(key => [key, 0]));
+  fresh.cash = { ...structuredClone(DEFAULT_SCENARIO.cash), savings: source.cash.savings, familyLoanAvailableBeforeDeposit: true };
+  fresh.purchaseCosts = { ...structuredClone(DEFAULT_SCENARIO.purchaseCosts), mode: 'provision', provisionAmount: 5000, provisionBeforeSigning: 0 };
   fresh.appraisalValue = null;
   fresh.referenceValue = null;
   fresh.declaredValue = null;
@@ -173,6 +173,7 @@ export function createHousingScenario(current = {}, rawDetails = {}) {
     assumedTerms: true,
     extraBuffer: 3000,
     maxAmount: 60000,
+    coverEarlyLiquidity: true,
   };
   // New scenarios use the explicitly chosen same-as-bank repayment hypothesis.
   // Preserve custom terms as a reference; saved scenarios are never migrated.

@@ -88,7 +88,7 @@ test('a new housing scenario preserves family bills, incomes, current rent, debt
   }
   assert.equal(fresh.cash.savings, current.cash.savings);
   assert.equal(fresh.cash.depositAmount, undefined);
-  assert.equal(fresh.cash.familyLoanAvailableBeforeDeposit, false);
+  assert.equal(fresh.cash.familyLoanAvailableBeforeDeposit, true);
   fresh.budget.incomes[0].monthly = 1;
   assert.equal(current.budget.incomes[0].monthly, 2100, 'the family budget must not be aliased');
 });
@@ -100,7 +100,10 @@ test('a new property resets property-specific amounts, confirmations, and identi
   assert.deepEqual(current, snapshot);
   for (const key of ['id', 'createdAt', 'updatedAt']) assert.equal(fresh[key], undefined);
   for (const key of ['appraisalValue', 'referenceValue', 'declaredValue']) assert.equal(fresh[key], null);
-  for (const amount of Object.values(fresh.purchaseCosts)) assert.equal(amount, 0);
+  for (const key of ['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker', 'other', 'renovations', 'reserve']) assert.equal(fresh.purchaseCosts[key], 0);
+  assert.equal(fresh.purchaseCosts.mode, 'provision');
+  assert.equal(fresh.purchaseCosts.provisionAmount, 5000);
+  assert.equal(fresh.purchaseCosts.provisionBeforeSigning, 0);
   for (const key of ['ibiAnnual', 'wasteAnnual', 'communityMonthly', 'maintenanceAnnual']) assert.equal(fresh.budget[key], 0);
   assert.equal(fresh.budget.propertyCostsEstimated, false);
   assert.equal(fresh.budget.propertyCostsConfirmed, false);
@@ -135,6 +138,7 @@ test('a new scenario has explicit bank and same-as-bank family hypotheses while 
   for (const [key, expected] of Object.entries({ enabled: true, amount: null, rate: 5, years: 10, assumedTerms: true, extraBuffer: 3000, maxAmount: 60000 })) assert.equal(fresh.familyLoan[key], expected);
   assert.equal(fresh.motherTransfer.familyYears, 12);
   assert.equal(fresh.motherTransfer.familyRate, 0);
+  assert.equal(fresh.familyLoan.coverEarlyLiquidity, true);
   assert.equal(fresh.motherTransfer.repaymentMode, 'same-as-bank');
   assert.equal(fresh.financingPlanVersion, 2);
   assert.equal(fresh.motherTransfer.giftNotaryCost, 0);

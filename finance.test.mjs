@@ -5,6 +5,7 @@ import {
   calculateTransferTax, standardCataloniaTransferTax, validateScenario,
   calculateGiftTax, calculateMotherTransfer,
   compareFamilyLoanTerms,
+  getAffordability, suggestFamilyLoanTerm,
 } from './finance.mjs';
 
 const close = (actual, expected, tolerance = 0.005) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} ≠ ${expected}`);
@@ -667,6 +668,262 @@ test('loan-term comparisons are explicit hypotheses and keep scenario and ICF el
   const unknown = compareFamilyLoanTerms({ familyLoan: { rate: null, years: null } }, [15])[0];
   assert.equal(unknown.rate, 5);
   assert.equal(unknown.result.icf.enabled, false, 'comparisons do not silently enable ICF');
+});
+
+const planningExample = () => ({
+  purchasePrice: 175000,
+  tax: { buyers: [{ share: 1, rate: 0.05, eligibilityConfirmed: true }] },
+  mortgage: { ltv: 0.8, years: 30, baseRate: 3.7 },
+  icf: { enabled: true },
+  purchaseCosts: { mode: 'provision', provisionAmount: 5000 },
+  cash: { familyLoanAvailableBeforeDeposit: true },
+  familyLoan: { enabled: true, rate: 5, years: 10, assumedTerms: true, coverEarlyLiquidity: true },
+  motherTransfer: { repaymentMode: 'same-as-bank' },
+  budget: { incomes: [{ monthly: 2800, payments: 12 }], existingDebtMonthly: 200, utilitiesMonthly: 200, foodMonthly: 500 },
+});
+
+test('purchase provision and itemized fees are exclusive and exclude other acquisition categories', () => {
+  const input = { purchasePrice: 200000, tax: { buyers: youngBuyers },
+    purchaseCosts: { mode: 'provision', provisionAmount: 5000, appraisal: 500, legal: 200, notary: 800, renovations: 2000, reserve: 1000 },
+    mortgage: { discounts: [{ id: 'protection', enabled: true, points: 0, cost: 1200, frequency: 'upfront', coverageYears: 5 }] },
+  };
+  const provision = calculateScenario(input);
+  assert.equal(provision.cash.purchaseFees, 5000);
+  assert.equal(provision.cash.purchaseFeesItemized, 1500);
+  assert.equal(provision.cash.purchaseFeesEstimated, true);
+  assert.equal(provision.cash.totalRequired, 59200);
+  assert.equal(provision.cash.totalAcquisitionCost, 218200);
+  assert.equal(provision.cash.prepaidPurchaseFees, 0);
+  assert.equal(provision.budget.incomplete, true);
+  const detail = calculateScenario({ ...input, purchaseCosts: { ...input.purchaseCosts, mode: 'itemized' } });
+  assert.equal(detail.cash.purchaseFees, 1500);
+  assert.equal(detail.cash.prepaidPurchaseFees, 700);
+  assert.equal(detail.cash.totalRequired, 55700);
+  assert.equal(detail.cash.purchaseFeesEstimated, false);
+  const staged = calculateScenario({ ...input, purchaseCosts: { ...input.purchaseCosts, provisionBeforeSigning: 500 } });
+  assert.equal(staged.cash.totalRequired, provision.cash.totalRequired);
+  assert.equal(staged.cash.beforeMortgageRequired - provision.cash.beforeMortgageRequired, 500);
+  assert.equal(staged.cash.closingNetPayment - provision.cash.closingNetPayment, -500);
+  assert.equal(normalizeScenario({ purchaseCosts: { appraisal: 500 } }).purchaseCosts.mode, 'itemized');
+  for (const purchaseCosts of [{ mode: 'both' }, { mode: 'provision', provisionAmount: -1 }, { provisionAmount: 100, provisionBeforeSigning: 101 }]) assert.equal(calculateScenario({ purchaseCosts }).valid, false);
+});
+
+test('explicit early-liquidity sizing covers arras without turning them into another acquisition expense', () => {
+  const input = planningExample();
+  const r = calculateScenario(input);
+  assert.equal(r.familyLoan.principal, 17500);
+  assert.equal(r.cash.totalRequired, 16750);
+  assert.equal(r.cash.earlyLiquidityExtraBorrowing, 750);
+  assert.equal(r.cash.beforeMortgageGap, 0);
+  assert.equal(r.cash.fundingGap, 0);
+  assert.equal(r.cash.surplus, 750);
+  assert.equal(r.cash.totalAcquisitionCost, 188750);
+  close(r.timeline.find((row) => row.id === 'after').balance, 3750);
+  const withoutFloor = calculateScenario({ ...input, familyLoan: { ...input.familyLoan, coverEarlyLiquidity: false } });
+  assert.equal(withoutFloor.familyLoan.principal, 16750);
+  assert.equal(withoutFloor.cash.beforeMortgageGap, 750);
+  assert.equal(withoutFloor.cash.totalRequired, r.cash.totalRequired);
+  const notEarly = calculateScenario({ ...input, cash: { familyLoanAvailableBeforeDeposit: false } });
+  assert.equal(notEarly.familyLoan.principal, 16750);
+  assert.equal(notEarly.cash.beforeMortgageGap, 17500);
+  const prepaid = calculateScenario({ ...input, purchaseCosts: { ...input.purchaseCosts, provisionBeforeSigning: 500 } });
+  assert.equal(prepaid.familyLoan.principal, 18000);
+  assert.equal(prepaid.cash.totalRequired, 16750);
+  assert.equal(prepaid.cash.beforeMortgageGap, 0);
+  assert.equal(prepaid.cash.earlyLiquidityExtraBorrowing, 1250);
+});
+
+test('pending release keeps nominal funding but exposes the full advance at risk', () => {
+  const input = planningExample();
+  const r = calculateScenario(input);
+  assert.equal(r.cash.depositFundingMode, 'pending');
+  assert.equal(r.mortgage.principal, 140000);
+  assert.equal(r.icf.principal, 35000);
+  assert.equal(r.familyLoan.principal, 17500);
+  assert.equal(r.cash.depositReleaseAtRisk, 17500);
+  assert.equal(r.cash.nominalDepositReleaseAtRisk, 17500);
+  assert.equal(r.cash.depositReleasePending, true);
+  assert.equal(r.cash.priceStillDueToSeller, 157500);
+  assert.equal(r.cash.closingNetPayment, -3750);
+  const a = getAffordability(input, r);
+  assert.equal(a.depositReleaseAtRisk, 17500);
+  assert.equal(a.depositReleasePending, true);
+  assert.equal(a.incomplete, true);
+  assert.equal(a.provisional, true);
+  assert.ok(r.warnings.some((warning) => warning.includes('no garantiza liquidez')));
+});
+
+test('without release only the outstanding vendor balance is financed and all payments follow actual capital', () => {
+  const input = planningExample();
+  input.cash.depositFundingMode = 'no-release';
+  const r = calculateScenario(input);
+  assert.equal(r.valid, true);
+  assert.equal(r.mortgage.principal, 140000);
+  assert.equal(r.icf.principal, 17500);
+  assert.equal(r.icf.nominalPrincipal, 35000);
+  assert.equal(r.icf.disbursementReducedByDeposit, 17500);
+  assert.equal(r.financing.nominalBankMortgage, 140000);
+  assert.equal(r.financing.nominalIcf, 35000);
+  assert.equal(r.financing.totalPriceFunding, 157500);
+  assert.equal(r.cash.priceContribution, 17500);
+  assert.equal(r.familyLoan.principal, 34250);
+  assert.equal(r.cash.totalRequired, 34250);
+  assert.equal(r.cash.tax, 8750);
+  assert.equal(r.cash.purchaseFees, 5000);
+  assert.equal(r.cash.familyExtraBuffer, 3000);
+  assert.equal(r.cash.totalAcquisitionCost, 188750);
+  assert.equal(r.cash.fundingGap, 0);
+  assert.equal(r.cash.beforeMortgageGap, 0);
+  assert.equal(r.cash.closingNetPayment, 13750);
+  assert.equal(r.cash.surplus, 0);
+  assert.equal(r.cash.depositReleaseAtRisk, 0);
+  assert.equal(r.cash.depositReleasePending, false);
+  assert.equal(r.cash.nominalDepositReleaseAtRisk, 17500);
+  close(r.icf.deferredMonthlyPayment, 17500 / 60);
+  close(r.familyLoan.monthlyPayment, monthlyPayment(34250, 5, 10));
+  close(r.motherTransfer.familyMonthlyRepayment, r.familyLoan.monthlyPayment);
+  close(r.budget.debtRatio, (200 + r.mortgage.monthlyPayment + r.familyLoan.monthlyPayment) / 2800);
+  close(r.budget.totalDebtMonthly, 200 + r.mortgage.monthlyPayment + r.familyLoan.monthlyPayment);
+  close(r.timeline.find((row) => row.id === 'after').balance, 3000);
+});
+
+test('confirmed advance compensation preserves nominal funding while no-release can reduce the bank first', () => {
+  const input = planningExample();
+  const confirmed = calculateScenario({ ...input, cash: { ...input.cash, depositFundingMode: 'offset-confirmed' } });
+  assert.equal(confirmed.familyLoan.principal, 17500);
+  assert.equal(confirmed.mortgage.principal, 140000);
+  assert.equal(confirmed.icf.principal, 35000);
+  assert.equal(confirmed.cash.depositReleaseAtRisk, 0);
+  assert.equal(confirmed.cash.depositReleasePending, false);
+  assert.equal(confirmed.cash.nominalDepositReleaseAtRisk, 17500);
+  assert.equal(getAffordability(input, confirmed).noApproval, true);
+  const largeAdvance = calculateScenario({ ...input, cash: { ...input.cash, depositPercent: 0.5, depositFundingMode: 'no-release' } });
+  assert.equal(largeAdvance.mortgage.principal, 87500);
+  assert.equal(largeAdvance.mortgage.nominalPrincipal, 140000);
+  assert.equal(largeAdvance.mortgage.disbursementReducedByDeposit, 52500);
+  assert.equal(largeAdvance.icf.principal, 0);
+  assert.equal(largeAdvance.icf.deferredMonthlyPayment, 0);
+  close(largeAdvance.mortgage.monthlyPayment, monthlyPayment(87500, 3.7, 30));
+  assert.equal(largeAdvance.familyLoan.principal, 60000);
+  assert.ok(largeAdvance.cash.fundingGap > 0);
+});
+
+test('advance risk is absent when lenders do not exceed the seller balance, and modes agree without arras', () => {
+  const input = planningExample();
+  const results = ['pending', 'offset-confirmed', 'no-release'].map((depositFundingMode) => calculateScenario({
+    ...input, cash: { ...input.cash, depositPercent: 0, depositFundingMode },
+  }));
+  for (const r of results) {
+    assert.equal(r.mortgage.principal, 140000);
+    assert.equal(r.icf.principal, 35000);
+    assert.equal(r.familyLoan.principal, 16750);
+    assert.equal(r.cash.depositReleaseAtRisk, 0);
+    assert.equal(r.cash.depositReleasePending, false);
+    assert.equal(r.cash.nominalDepositReleaseAtRisk, 0);
+  }
+  const noIcf = calculateScenario({ ...input, icf: { enabled: false } });
+  const conservative = calculateScenario({ ...input, icf: { enabled: false }, cash: { ...input.cash, depositFundingMode: 'no-release' } });
+  assert.equal(noIcf.cash.depositReleaseAtRisk, 0);
+  assert.equal(noIcf.cash.depositReleasePending, false);
+  assert.equal(conservative.mortgage.principal, noIcf.mortgage.principal);
+  assert.equal(conservative.familyLoan.principal, noIcf.familyLoan.principal);
+  assert.equal(calculateScenario({ cash: { depositFundingMode: 'reimburse-guaranteed' } }).valid, false);
+});
+
+test('pending deposit release alone prevents a complete affordability assessment even when known arithmetic fits', () => {
+  const input = planningExample();
+  input.icf.eligibilityConfirmed = true;
+  input.familyLoan.assumedTerms = false;
+  input.purchaseCosts = { mode: 'itemized', notary: 5000 };
+  input.budget = { ...input.budget, incomes: [{ monthly: 4500, payments: 12 }],
+    maintenanceAnnual: 600, externalHomeInsuranceAnnual: 180, propertyCostsConfirmed: true };
+  const pending = getAffordability(input);
+  const confirmed = getAffordability({ ...input, cash: { ...input.cash, depositFundingMode: 'offset-confirmed' } });
+  assert.equal(pending.meetsKnownLimits, true, 'this is an arithmetic reference, not approval');
+  assert.equal(pending.incomplete, true);
+  assert.equal(pending.provisional, true);
+  assert.equal(confirmed.incomplete, false);
+  assert.equal(confirmed.provisional, false);
+  assert.equal(confirmed.noApproval, true);
+});
+
+test('early-liquidity floor gross-ups fees and gift tax once and still honors manual capital and cap', () => {
+  const input = planningExample();
+  const gifted = calculateScenario({ ...input,
+    familyLoan: { ...input.familyLoan, originationFeePercent: 1, originationFeeFixed: 100 },
+    motherTransfer: { mode: 'gift', giftNotaryCost: 300 },
+  });
+  assert.equal(gifted.familyLoan.principal, 19042.56);
+  close(gifted.cash.earlyLiquidityExtraBorrowing, 750, 0.01);
+  assert.equal(gifted.cash.beforeMortgageGap, 0);
+  assert.equal(gifted.cash.fundingGap, 0);
+  const manual = calculateScenario({ ...input, familyLoan: { ...input.familyLoan, amount: 16000 } });
+  assert.equal(manual.familyLoan.principal, 16000);
+  assert.equal(manual.cash.fundingGap, 750);
+  assert.equal(manual.cash.beforeMortgageGap, 1500);
+  const capped = calculateScenario({ ...input, cash: { familyLoanAvailableBeforeDeposit: true, depositPercent: 0.5 } });
+  assert.equal(capped.familyLoan.principal, 60000);
+  assert.equal(capped.cash.beforeMortgageGap, 27500);
+});
+
+test('affordability separates the borrower debt reference from family income and incomplete approvals', () => {
+  const input = planningExample();
+  const r = calculateScenario(input);
+  const a = getAffordability(input, r);
+  close(a.maximumMotherMonthly, 2800 * 0.35 - 200 - r.mortgage.monthlyPayment);
+  assert.equal(a.withinDebtLimit, false);
+  assert.equal(a.cashFundingGap, 0);
+  assert.equal(a.earlyCashGap, 0);
+  assert.equal(a.incomplete, true);
+  assert.equal(a.noApproval, true);
+  const additionalIncome = getAffordability({ ...input, budget: { ...input.budget, householdIncomes: [{ id: 'mother', monthly: 900, payments: 14 }, { id: 'sister', monthly: 1500, payments: 12 }] } });
+  assert.equal(additionalIncome.maximumMotherMonthly, a.maximumMotherMonthly);
+  assert.equal(additionalIncome.withinDebtLimit, a.withinDebtLimit);
+  assert.ok(additionalIncome.householdRemaining > a.householdRemaining);
+  const unknown = getAffordability({ ...input, familyLoan: { ...input.familyLoan, rate: null } });
+  assert.equal(unknown.withinDebtLimit, null);
+  assert.equal(unknown.householdRemaining, null);
+  assert.equal(unknown.meetsKnownLimits, false);
+  assert.equal(getAffordability({ budget: { incomes: [null] } }).valid, false);
+});
+
+test('shortest-term search respects the debt reference without lowering required capital or claiming approval', () => {
+  const input = planningExample();
+  const before = JSON.stringify(input);
+  const suggestion = suggestFamilyLoanTerm(input);
+  assert.equal(suggestion.found, true);
+  assert.equal(suggestion.years, 16);
+  assert.equal(suggestion.result.familyLoan.principal, 17500);
+  assert.equal(suggestion.result.cash.purchasePrice, 175000);
+  assert.equal(suggestion.affordability.withinDebtLimit, true);
+  assert.equal(suggestion.affordability.meetsKnownLimits, true);
+  assert.equal(suggestion.affordability.incomplete, true);
+  assert.equal(suggestion.provisional, true);
+  assert.equal(suggestion.noApproval, true);
+  assert.ok(suggestion.candidates.at(-2).withinDebtLimit === false);
+  assert.equal(suggestFamilyLoanTerm(input, { maxYears: 10 }).reasonCode, 'debt-limit');
+  assert.equal(JSON.stringify(input), before);
+  const custom = suggestFamilyLoanTerm({ ...input, motherTransfer: { repaymentMode: 'custom', familyRate: 0, familyYears: 20 } });
+  assert.equal(custom.found, false);
+  assert.equal(custom.reasonCode, 'custom-family-agreement');
+  assert.equal(suggestFamilyLoanTerm(input, { maxYears: 31 }).valid, false);
+  assert.equal(suggestFamilyLoanTerm({ ...input, familyLoan: { ...input.familyLoan, rate: null } }).reasonCode, 'missing-rate');
+});
+
+test('a debt-fitting term never hides purchase cash gaps, early gaps, or negative household margin', () => {
+  const input = planningExample();
+  const early = suggestFamilyLoanTerm({ ...input, familyLoan: { ...input.familyLoan, coverEarlyLiquidity: false } });
+  assert.equal(early.found, false);
+  assert.equal(early.reasonCode, 'early-cash-gap');
+  assert.ok(early.minimumDebtTermYears > 0);
+  const cap = suggestFamilyLoanTerm({ ...input, purchasePrice: 500000, budget: { ...input.budget, incomes: [{ monthly: 10000, payments: 12 }] } });
+  assert.equal(cap.found, false);
+  assert.equal(cap.reasonCode, 'purchase-cash-gap');
+  assert.equal(cap.result.familyLoan.principal, 60000);
+  assert.ok(cap.affordability.cashFundingGap > 0);
+  const expenses = suggestFamilyLoanTerm({ ...input, budget: { ...input.budget, incomes: [{ monthly: 4000, payments: 12 }], foodMonthly: 5000 } });
+  assert.equal(expenses.found, false);
+  assert.equal(expenses.reasonCode, 'household-margin');
 });
 
 

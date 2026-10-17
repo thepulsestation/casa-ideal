@@ -9,7 +9,7 @@ const memory = { values: new Map(), getItem(key) { return this.values.get(key) ?
 let instance=0;
 const shared = id => normalizeScenario({id,name:'Casa de prueba',budget:{incomes:[{monthly:2100,payments:12},{monthly:1700,payments:14}]}});
 const tick = () => new Promise(resolve=>setImmediate(resolve));
-const savedHome=id=>({...shared(id),financingPlanVersion:2,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-02T00:00:00Z'});
+const savedHome=id=>({...shared(id),financingPlanVersion:2,purchasePlanVersion:1,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-02T00:00:00Z'});
 
 // A small DOM substitute tests application wiring; no browser or external network.
 function boot({hash='#resumen',draft=null,joined=false,scenarios=[],signupGate=null,localScenarios=[],draftMeta=null,saveGate=null,failSaves=0,listGate=null}={}) {
@@ -136,7 +136,7 @@ test('manual project connection waits for restoration and remains the active pro
 
 test('applying the property provision changes only its three costs and marks them unconfirmed',async()=>{
  const draft=normalizeScenario({id:'local-house',budget:{foodMonthly:450,storageMonthly:65,utilityBreakdown:{waterMonthly:30},ibiAnnual:800,wasteAnnual:120,communityMonthly:20,propertyCostsConfirmed:true}});
- const app=boot({hash:'#presupuesto',draft});await app.loading;
+ const app=boot({hash:'#compra',draft});await app.loading;
  await app.node('action-apply-property-provision').handlers.click();
  const b=app.draft().budget;
  assert.equal(b.ibiAnnual,1500);assert.equal(b.wasteAnnual,300);assert.equal(b.communityMonthly,100);
@@ -145,7 +145,7 @@ test('applying the property provision changes only its three costs and marks the
 });
 test('the IBI assistant preserves waste, community, and living costs',async()=>{
  const draft=normalizeScenario({id:'local-house',budget:{ibiLiquidableBase:100000,ibiRatePercent:.7,wasteAnnual:240,communityMonthly:40,storageMonthly:65}});
- const app=boot({hash:'#presupuesto',draft});await app.loading;
+ const app=boot({hash:'#compra',draft});await app.loading;
  await app.node('action-apply-ibi-estimate').handlers.click();
  const b=app.draft().budget;
  assert.equal(b.ibiAnnual,700);assert.equal(b.wasteAnnual,240);assert.equal(b.communityMonthly,40);assert.equal(b.storageMonthly,65);
@@ -163,14 +163,14 @@ test('enabling common bills reuses known current bills if the future budget was 
 test('a budget with property provisions is approximate rather than a promised minimum or maximum margin',async()=>{
  const draft=normalizeScenario({budget:{incomes:[{monthly:4000,payments:12}],propertyCostsEstimated:true,ibiAnnual:1500,wasteAnnual:300,communityMonthly:100}});
  const app=boot({draft});await app.loading;
- assert.ok(app.html.includes('≈ '));assert.ok(app.html.includes('Presupuesto orientativo con provisiones'));
+ assert.ok(app.html.includes('≈ '));assert.ok(app.html.includes('Quedan gastos o condiciones pendientes'));
  assert.ok(!app.html.includes('mínimo conocido'));assert.ok(!app.html.includes('Margen máximo provisional'));
 });
 
 
 test('the home page opens the housing overview',async()=>{
  const app=boot({hash:''});await app.loading;
- assert.equal(app.node('page-title').textContent,'Vuestras viviendas, una al lado de la otra.');
+ assert.equal(app.node('page-title').textContent,'Vuestras viviendas.');
  assert.ok(app.html.includes('Añadir vivienda'));
 });
 test('adding and renaming a flat preserves the family budget and one saved identifier',async()=>{
@@ -342,6 +342,119 @@ test('the existing Navàs record gains reference journeys and listing facts with
  const app=boot({joined:true,scenarios:[home]});await app.loading;await app.flushTimers();
  const record=app.server.get('navas').data;assert.equal(record.listingDetails.beds,4);assert.equal(record.listingDetails.baths,1);
  assert.equal(record.commute.trips[2].destinationConfirmed,true);assert.ok(record.commute.trips[2].destination.includes('Royal'));assert.ok(record.commute.trips[0].destination.includes('Rodalies'));
- assert.equal(record.commute.trips[1].minutesMin,null);assert.equal(record.housingPresentationVersion,1);
+ assert.equal(record.commute.trips[1].minutesMin,100);assert.equal(record.housingPresentationVersion,2);
  assert.deepEqual(record.budget,home.budget);
+});
+
+// Shared-profile integration cases: only synthetic incomes and expenses.
+import {FAMILY_PROFILE_ID as PROFILE_TEST_ID,extractFamilyProfile as extractProfileForAppTest} from './family-profile.mjs';
+function profileForAppTest({foodMonthly=400,savings=2500}={}){
+ const source=savedHome('profile-source');source.budget.foodMonthly=foodMonthly;source.cash.savings=savings;
+ return {...extractProfileForAppTest(source),createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-02T00:00:00Z'};
+}
+function profileCacheForAppTest(){
+ const entry=[...memory.values].find(([key])=>key.startsWith('casa-ideal.family-budget.v1:')&&key.includes('synthetic-family'));
+ return entry?JSON.parse(entry[1]):null;
+}
+
+test('editing the connected household budget creates a reserved profile and other homes keep their own IBI',async()=>{
+ const first=savedHome('profile-first'),second=savedHome('profile-second');first.budget.ibiAnnual=850;second.budget.ibiAnnual=1350;
+ const app=boot({hash:'#presupuesto',joined:true,draft:first,draftMeta:{id:first.id,dirty:false},scenarios:[first,second]});await app.loading;
+ const food=app.node('field-budget.foodMonthly');food.value='475';food.handlers.change({target:food});await app.flushTimers();
+ const profile=app.server.get(PROFILE_TEST_ID)?.data;
+ assert.ok(profile,'a shared profile is saved, not only a per-house snapshot');
+ assert.equal(profile.kind,'family-budget');assert.equal(profile.budget.foodMonthly,475);assert.equal(Object.hasOwn(profile.budget,'ibiAnnual'),false);
+ assert.equal(app.requests.filter(r=>r.method==='POST'&&r.body?.id===PROFILE_TEST_ID).length,1);
+ app.navigate('#viviendas');await app.node('action-loadprofile-second').handlers.click();
+ assert.equal(app.draft().id,second.id);assert.equal(app.draft().budget.foodMonthly,475);assert.equal(app.draft().budget.ibiAnnual,1350);
+ assert.equal(app.server.get(first.id).data.budget.ibiAnnual,850);assert.equal(app.server.get(second.id).data.budget.ibiAnnual,1350);
+ assert.equal(Number(app.node('saved-count').textContent),2);
+});
+
+test('a remotely refreshed family profile applies to every home without becoming a listed property',async()=>{
+ const first=savedHome('remote-profile-first'),second=savedHome('remote-profile-second');first.budget.ibiAnnual=700;second.budget.ibiAnnual=1200;
+ const profile=profileForAppTest();
+ const app=boot({hash:'#viviendas',joined:true,scenarios:[first,second,profile]});await app.loading;
+ assert.equal(Number(app.node('saved-count').textContent),2);assert.ok(!app.html.includes(`data-home-id="${PROFILE_TEST_ID}"`));
+ await app.node('action-loadremote-profile-first').handlers.click();
+ assert.equal(app.draft().budget.foodMonthly,400);
+ const remote=app.server.get(PROFILE_TEST_ID);remote.data.budget.foodMonthly=625;remote.data.cash.savings=9000;remote.updated_at='2026-02-04T00:00:00Z';
+ await app.event('focus');app.navigate('#presupuesto');
+ assert.equal(Number(app.node('field-budget.foodMonthly').value),625);
+ app.navigate('#viviendas');await app.node('action-loadremote-profile-second').handlers.click();
+ assert.equal(app.draft().budget.foodMonthly,625);assert.equal(app.draft().cash.savings,9000);assert.equal(app.draft().budget.ibiAnnual,1200);
+ app.navigate('#viviendas');await app.node('action-loadremote-profile-first').handlers.click();
+ assert.equal(app.draft().budget.foodMonthly,625);assert.equal(app.draft().cash.savings,9000);assert.equal(app.draft().budget.ibiAnnual,700);
+ assert.equal(app.requests.filter(r=>r.path==='/rest/v1/scenarios'&&['POST','PATCH','DELETE'].includes(r.method)).length,0);
+});
+
+test('a concurrent family-profile CAS failure preserves the local edit and resolves to the newest remote budget',async()=>{
+ const home=savedHome('profile-cas'),profile=profileForAppTest();
+ const app=boot({hash:'#presupuesto',joined:true,scenarios:[home,profile]});await app.loading;
+ const food=app.node('field-budget.foodMonthly');food.value='475';food.handlers.change({target:food});
+ // A second device saves after this device read the original revision.
+ const remote=app.server.get(PROFILE_TEST_ID);remote.data.budget.foodMonthly=600;remote.updated_at='2026-02-05T00:00:00Z';
+ await app.flushTimers();
+ assert.equal(remote.data.budget.foodMonthly,600);assert.equal(app.draft().budget.foodMonthly,475);
+ assert.equal(profileCacheForAppTest().dirty,true);assert.equal(profileCacheForAppTest().profile.budget.foodMonthly,475);
+ assert.ok(app.html.includes('El presupuesto familiar ha cambiado en otro dispositivo'));
+ const patch=app.requests.find(r=>r.method==='PATCH'&&r.query.get('id')==='eq.'+PROFILE_TEST_ID);
+ assert.ok(patch);assert.equal(patch.query.get('updated_at'),'eq.'+profile.updatedAt);
+ assert.ok(app.node('action-use-family-budget').handlers.click);
+ await app.node('action-use-family-budget').handlers.click();
+ assert.equal(app.draft().budget.foodMonthly,600);assert.equal(profileCacheForAppTest().dirty,false);
+ assert.ok(!app.html.includes('El presupuesto familiar ha cambiado en otro dispositivo'));
+});
+
+test('an external profile change is visible as a conflict while this device has an unsaved household edit',async()=>{
+ const app=boot({hash:'#presupuesto',joined:true,scenarios:[savedHome('profile-refresh-conflict'),profileForAppTest()]});await app.loading;
+ const food=app.node('field-budget.foodMonthly');food.value='475';food.handlers.change({target:food});
+ const remote=app.server.get(PROFILE_TEST_ID);remote.data.budget.foodMonthly=650;remote.updated_at='2026-02-06T00:00:00Z';
+ await app.event('focus');
+ assert.equal(app.draft().budget.foodMonthly,475);assert.equal(profileCacheForAppTest().dirty,true);
+ assert.ok(app.html.includes('El presupuesto familiar ha cambiado en otro dispositivo'));
+ assert.ok(app.node('action-use-family-budget').handlers.click);
+ assert.equal(app.requests.filter(r=>r.method==='PATCH').length,0);
+});
+
+test('a favorite uses CAS and changes only the favorite metadata, preserving raw property and financial data',async()=>{
+ const home=savedHome('favorite-preserves'),other=savedHome('favorite-other');home.budget.ibiAnnual=925;home.budget.foodMonthly=123;home.cash.savings=200;
+ const profile=profileForAppTest({foodMonthly:700,savings:8500});
+ const app=boot({hash:'#viviendas',joined:true,scenarios:[home,other,profile]});await app.loading;
+ const before=structuredClone(app.server.get(home.id).data);
+ await app.node('action-favoritefavorite-preserves').handlers.click();
+ const after=structuredClone(app.server.get(home.id).data);assert.equal(after.favorite,true);
+ delete after.favorite;delete after.updatedAt;delete before.favorite;delete before.updatedAt;
+ assert.deepEqual(after,before);
+ const patch=app.requests.find(r=>r.method==='PATCH'&&r.query.get('id')==='eq.'+home.id);
+ assert.ok(patch);assert.equal(patch.query.get('updated_at'),'eq.'+home.updatedAt);
+ assert.equal(app.requests.filter(r=>r.method==='POST'&&r.path==='/rest/v1/scenarios').length,0);
+ assert.equal(app.server.get(PROFILE_TEST_ID).data.budget.foodMonthly,700);
+});
+
+test('a stale favorite cannot overwrite a newer edit made by another device',async()=>{
+ const home=savedHome('favorite-stale'),other=savedHome('favorite-stale-other');
+ const app=boot({hash:'#viviendas',joined:true,scenarios:[home,other]});await app.loading;
+ const remote=app.server.get(home.id);remote.data.name='Nombre cambiado en otro dispositivo';remote.data.purchasePrice=180000;remote.updated_at='2026-02-07T00:00:00Z';
+ const before=structuredClone(remote.data);
+ await app.node('action-favoritefavorite-stale').handlers.click();
+ assert.deepEqual(app.server.get(home.id).data,before);assert.notEqual(app.server.get(home.id).data.favorite,true);
+ assert.ok(app.node('toast').textContent.includes('cambiado'));
+ assert.equal(app.requests.filter(r=>r.method==='POST'&&r.path==='/rest/v1/scenarios').length,0);
+});
+
+test('the comparison selectors and columns exclude the reserved shared-budget record',async()=>{
+ const first=savedHome('compare-profile-first'),second=savedHome('compare-profile-second');first.name='Primera comparada';second.name='Segunda comparada';
+ const app=boot({hash:'#comparativa',joined:true,scenarios:[first,second,profileForAppTest()]});await app.loading;
+ const queryAll=document.querySelectorAll.bind(document);
+ // Supply checkbox event nodes to the minimal DOM harness for this view.
+ document.querySelectorAll=selector=>selector==='[data-compare]'?[...app.html.matchAll(/<input[^>]*data-compare="([^"]+)"[^>]*>/g)].map(match=>{
+  const input=app.node('comparison-'+match[1]);input.dataset={compare:match[1]};input.checked=/\schecked(?:\s|>)/.test(match[0]);return input;
+ }):queryAll(selector);
+ app.navigate('#comparativa');
+ for(const id of [first.id,second.id]){const input=app.node('comparison-'+id);input.checked=true;input.handlers.change();}
+ const table=app.html.match(/<table>([\s\S]*?)<\/table>/)?.[1];
+ assert.ok(table);assert.ok(table.includes(first.name));assert.ok(table.includes(second.name));
+ assert.ok(!app.html.includes(`data-compare="${PROFILE_TEST_ID}"`));assert.ok(!table.includes(PROFILE_TEST_ID));
+ assert.equal(Number(app.node('saved-count').textContent),2);
 });
