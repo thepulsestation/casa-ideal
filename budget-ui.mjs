@@ -1,4 +1,4 @@
-import {renderPropertyCosts} from './property-costs.mjs?v=1';
+import {renderPropertyCosts} from './property-costs.mjs?v=13';
 /** Family income and household expenses. Personal amounts live in the scenario. */
 export function renderBudget(s, result, { field, select, check, section, notice, row, euro, pct, resultSidebar, global = false }) {
   const b = result.budget;
@@ -38,7 +38,7 @@ export function renderBudget(s, result, { field, select, check, section, notice,
   return `<div class="grid form-layout"><div>
     ${section('Los dos titulares de la hipoteca', 'Vuestros sueldos se usan para el esfuerzo hipotecario. Las pagas extra se muestran aparte.', `
       <div class="form-grid">
-        ${[0, 1].map(i => `${field(i === 0 ? 'Tu nómina neta' : 'Nómina neta de tu hermano', 'budget.incomes.' + i + '.monthly')}
+        ${[0, 1].map(i => `${field(i === 0 ? 'Tu nómina neta' : 'Nómina neta de tu hermano', 'budget.incomes.' + i + '.monthly', {hint:'Neto de un mes ordinario. Si varía, compara también con un mes de ingresos menores; las pagas extra se muestran aparte.'})}
           ${select(i === 0 ? 'Tus pagas al año' : 'Pagas de tu hermano al año', 'budget.incomes.' + i + '.payments', [[12, '12 pagas'], [14, '14 pagas']])}`).join('')}
         ${field('Límite orientativo de deuda', 'budget.debtRatioLimit', { suffix: '%', scale: 100, max: 100 })}
       </div>

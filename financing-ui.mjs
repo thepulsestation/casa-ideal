@@ -1,4 +1,4 @@
-import {monthlyPayment, compareFamilyLoanTerms} from './finance.mjs?v=12';
+import {monthlyPayment, compareFamilyLoanTerms} from './finance.mjs?v=13';
 
 // Apply the financing plan requested by the family once to legacy scenarios.
 // Eligibility remains unconfirmed; later edits (including disabling ICF) win.
@@ -14,6 +14,15 @@ export function adoptFamilyFinancingPlan(scenario) {
   return s;
 }
 
+// Verbal breakdown supplied by the family; never switches products on or quotes premiums.
+export function adoptDiscountBreakdown(scenario) {
+  if(scenario.discountBreakdownVersion===1)return scenario;
+  const s=structuredClone(scenario);
+  for(const d of s.mortgage.discounts)if(['home','protection'].includes(d.id)&&d.points==null)d.points=.1;
+  s.discountBreakdownVersion=1;
+  return s;
+}
+
 export function renderFinancingBreakdown(s,r,{euro,pct,notice,row,compact=false}) {
   const price=s.purchasePrice, icf=r.icf.principal, remaining=r.cash.priceContribution;
   return `<section class="card financing-plan"><div class="card-head"><div><h2>Quién financia el precio de la vivienda</h2><p>Precio y gastos de compra se calculan por separado.</p></div><span class="pill">${s.icf.enabled?'PLAN CON ICF':'SIN ICF'}</span></div><div class="funding-grid"><div><span>Hipoteca Sabadell · ${pct(price?r.mortgage.principal/price:0)}</span><strong>${euro(r.mortgage.principal)}</strong></div><div><span>Préstamo ICF · ${pct(price?icf/price:0)}</span><strong>${euro(icf)}</strong></div><div><span>Precio todavía sin financiar</span><strong>${euro(remaining)}</strong></div></div>
@@ -24,8 +33,8 @@ export function renderFinancingBreakdown(s,r,{euro,pct,notice,row,compact=false}
 
 export function renderFamilyLoanTerms(s,r,{euro,pct,notice}) {
   if(s.familyLoan.rate===null||s.familyLoan.rate===undefined)return notice('Introduce el TIN del préstamo de mamá para comparar los plazos. No se presupone un tipo si lo has dejado pendiente.','info');
-  const terms=compareFamilyLoanTerms(s,[10,15,20]);
-  return `<div class="section-gap"><h3>Elegid un plazo para el préstamo de mamá</h3><p>Se recalcula con el mismo capital y TIN introducidos. Un plazo más largo baja la cuota y aumenta los intereses.</p><div class="table-wrap"><table><thead><tr><th>Plazo</th><th class="number">Cuota /mes</th><th class="number">Intereses totales</th><th class="number">Deudas de titulares</th><th></th></tr></thead><tbody>${terms.map(t=>`<tr><td>${t.years} años</td><td class="number">${euro(t.monthlyPayment,2)}</td><td class="number">${euro(t.totalInterest,2)}</td><td class="number">${t.result?.budget?.borrowerDebtRatioIncomplete?'≥ ':''}${pct(t.borrowerDebtRatio)}</td><td><button class="button secondary" data-action="loan-term" data-years="${t.years}">${Number(s.familyLoan.years)===t.years?'Seleccionado':'Usar '+t.years+' años'}</button></td></tr>`).join('')}</tbody></table></div>${notice('Los plazos de 10, 15 y 20 años son hipótesis de comparación. No se ha verificado que el banco ofrezca esos plazos ni ese TIN a mamá. Su edad, ingresos, deudas, comisiones y TAE pueden cambiar las condiciones.','info')}</div>`;
+  const terms=compareFamilyLoanTerms(s,[8,10,15,20]);
+  return `<div class="section-gap"><h3>Elegid un plazo para el préstamo de mamá</h3><p>Se recalcula con el mismo capital y TIN introducidos. Un plazo más largo baja la cuota y aumenta los intereses.</p><div class="table-wrap"><table><thead><tr><th>Plazo</th><th class="number">Cuota /mes</th><th class="number">Intereses totales</th><th class="number">Deudas de titulares</th><th></th></tr></thead><tbody>${terms.map(t=>`<tr><td>${t.years} años</td><td class="number">${euro(t.monthlyPayment,2)}</td><td class="number">${euro(t.totalInterest,2)}</td><td class="number">${t.result?.budget?.borrowerDebtRatioIncomplete?'≥ ':''}${pct(t.borrowerDebtRatio)}</td><td><button class="button secondary" data-action="loan-term" data-years="${t.years}">${Number(s.familyLoan.years)===t.years?'Seleccionado':'Usar '+t.years+' años'}</button></td></tr>`).join('')}</tbody></table></div>${notice('Incluimos 8 años. Ejemplo provisional: 20.000 € al 12 % TIN, sin comisiones, son 325,06 €/mes. Falta saber si el 12 % comunicado es TIN o TAE. Los plazos de 10, 15 y 20 años son hipótesis de comparación. No se ha verificado que el banco ofrezca esos plazos ni ese TIN a mamá. Su edad, ingresos, deudas, comisiones y TAE pueden cambiar las condiciones.','info')}</div>`;
 }
 
 export function renderBorrowerDebt(s,r,{euro,pct,notice,row,esc}) {

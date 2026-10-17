@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeScenario,calculateScenario} from './finance.mjs';
-import {adoptFamilyFinancingPlan,renderFinancingBreakdown,renderBorrowerDebt,renderFamilyLoanTerms} from './financing-ui.mjs';
+import {adoptFamilyFinancingPlan,adoptDiscountBreakdown,renderFinancingBreakdown,renderBorrowerDebt,renderFamilyLoanTerms} from './financing-ui.mjs';
 
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const helpers={esc,euro:(v)=>v==null?'Pendiente':Number(v).toFixed(2),pct:v=>v==null?'—':(v*100).toFixed(2)+'%',row:(l,v)=>`<div>${l}: ${v}</div>`,notice:t=>`<p>${t}</p>`};
@@ -34,6 +34,19 @@ test('borrower debt explanation uses borrower income and escapes imported buyer 
 test('loan comparison exposes hypothetical terms and never assumes a cleared TIN',()=>{
  const s=adoptFamilyFinancingPlan(normalizeScenario({purchasePrice:175000})),r=calculateScenario(s);
  const html=renderFamilyLoanTerms(s,r,helpers);
- for(const text of ['10 años','15 años','20 años','217.43','135.29','hipótesis','ofrezca'])assert.ok(html.includes(text));
+ for(const text of ['8 años','10 años','15 años','20 años','217.43','135.29','hipótesis','ofrezca','TIN o TAE'])assert.ok(html.includes(text));
  s.familyLoan.rate=null;assert.ok(renderFamilyLoanTerms(s,calculateScenario(s),helpers).includes('Introduce el TIN'));
+});
+
+test('the verbal discount breakdown fills missing points once without activating products or inventing premiums',()=>{
+ const s=normalizeScenario({});const original=structuredClone(s);
+ s.mortgage.discounts.find(d=>d.id==='home').points=.15;
+ const next=adoptDiscountBreakdown(s);
+ assert.equal(next.mortgage.discounts.find(d=>d.id==='home').points,.15);
+ assert.equal(next.mortgage.discounts.find(d=>d.id==='protection').points,.1);
+ assert.ok(next.mortgage.discounts.every(d=>!d.enabled));
+ assert.equal(next.mortgage.discounts.find(d=>d.id==='protection').cost,null);
+ assert.equal(original.mortgage.discounts.find(d=>d.id==='protection').points,null);
+ next.mortgage.discounts.find(d=>d.id==='protection').points=null;
+ assert.equal(adoptDiscountBreakdown(next).mortgage.discounts.find(d=>d.id==='protection').points,null);
 });

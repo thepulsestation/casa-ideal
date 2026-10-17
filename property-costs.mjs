@@ -16,6 +16,7 @@ export function estimateAnnualIbi(base,ratePercent){
 export function renderPropertyCosts(s,result,{field,check,notice,row,euro}){
  let ibi=null;try{ibi=estimateAnnualIbi(s.budget.ibiLiquidableBase,s.budget.ibiRatePercent)}catch{}
  const provision=PROPERTY_COST_PROVISION;
+ const navas=String(s.listingDetails?.city||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase()==='navas';
  return `<div class="form-grid">
   ${field('Comunidad / conservación de urbanización al mes','budget.communityMonthly',{hint:'Cuota de la comunidad o entidad de conservación. Puede ser 0 si has comprobado que no existe. Las derramas extraordinarias van aparte.'})}
   ${field('IBI anual','budget.ibiAnnual',{hint:'Usa el recibo de esta casa. No se calcula sobre el precio del anuncio ni sobre el valor de referencia del ITP.'})}
@@ -24,7 +25,8 @@ export function renderPropertyCosts(s,result,{field,check,notice,row,euro}){
  </div>
  <p class="fine-print">Son gastos de la casa que compraríais. IBI, residuos y mantenimiento se dividen entre 12 para reservar dinero. Los recibos pueden cobrarse en otras fechas.</p>
  ${s.budget.propertyCostsEstimated?notice('<strong>Hay importes orientativos en este presupuesto.</strong> Se cuentan en el coste mensual, pero la simulación sigue pendiente de comprobar los recibos. No son un máximo.','info'):''}
- <div class="section-gap">${check('He comprobado IBI, residuos y comunidad / conservación para esta casa','budget.propertyCostsConfirmed','Con recibos, ordenanzas y presupuesto de la comunidad. Si una partida no se aplica, confirma también ese 0 €.')}</div>
+ <div class="section-gap">${check('He comprobado IBI, residuos y comunidad / conservación para esta casa','budget.propertyCostsConfirmed','Marca solo después de revisar recibos y presupuesto de la comunidad. No busca ni valida importes: retira el aviso de estimación. Si usas cifras orientativas, déjalo sin marcar; confirma también cualquier 0 €.')}</div>
+ ${navas?`<details class="section-gap"><summary>Referencia municipal de Navàs · 2026</summary><p>La ordenanza publica un IBI urbano del <strong>0,815 % de la base liquidable</strong>. Falta el recibo de este piso para conocer esa base y sus ajustes: no se obtiene del precio ni de los metros.</p><p>Residuos domésticos: parte básica de <strong>136,50 €/año</strong> y parte variable de <strong>0–100 €/año</strong> según uso de los contenedores, antes de bonificaciones y otras circunstancias. La variable se liquida al año siguiente. Son las tarifas de 2026; no se trasladan automáticamente a otro ejercicio.</p><p>Las provisiones actuales no se sustituyen ni se dan por comprobadas. La cuota de comunidad depende del edificio. <a href="https://www.navas.cat/wp-content/uploads/2026/03/OOFF20260324-.pdf" target="_blank" rel="noopener noreferrer">Ordenanzas de Navàs: IBI y residuos</a>.</p></details>`:''}
  <details class="section-gap"><summary>No conozco los importes: probar una provisión</summary>
   <p>Sin municipio, recibos y situación de la urbanización no hay un máximo fiable, aunque conozcas el precio, los metros de vivienda y de parcela. Esta es una hipótesis editable para probar vuestro margen.</p>
   <div class="breakdown">${row('IBI · provisión anual',euro(provision.ibiAnnual))}${row('Recogida y tratamiento · provisión anual',euro(provision.wasteAnnual))}${row('Urbanización · provisión mensual',euro(provision.communityMonthly))}${row('Total a reservar al mes',euro(provision.ibiAnnual/12+provision.wasteAnnual/12+provision.communityMonthly,2),'total')}</div>

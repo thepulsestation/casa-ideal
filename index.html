@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#173f3b">
   <meta name="description" content="Entiende cuánto dinero necesitas para comprar una casa y cuánto pagarás cada mes. Compara y guarda tus escenarios familiares.">
   <title>Casa Ideal · Comprar con los números claros</title>
-  <link rel="stylesheet" href="./style.css?v=12">
+  <link rel="stylesheet" href="./style.css?v=13">
 </head>
 <body>
 <a class="skip" href="#main">Saltar al contenido</a>
@@ -35,6 +35,6 @@
 <dialog id="save-dialog" class="housing-dialog"><form id="save-form"><div class="eyebrow">VIVIENDAS DE LA FAMILIA</div><h2 id="save-heading">Añadir una vivienda</h2><p>El cálculo reutiliza vuestros ingresos, deudas y gastos de vida. Los costes de esta vivienda se revisan por separado.</p><div class="form-grid"><label>Nombre de la vivienda<input id="save-name" required maxlength="120" placeholder="Piso en Navàs…"></label><label>Enlace del anuncio<input id="save-url" type="url" placeholder="https://…"></label><label>Precio de compra (€)<input id="save-price" type="number" min="1" step="any" required></label><label>Tipo de vivienda<select id="save-type"><option value="flat">Piso</option><option value="house">Casa</option></select></label><label>Compra e impuestos · supuesto a confirmar<select id="save-tax-mode"><option value="used">Segunda mano · ITP</option><option value="new">Primera entrega · IVA + AJD</option></select><span class="field-hint">Un piso puede ser nuevo o usado. Una reforma no determina por sí sola el impuesto.</span></label><label>Municipio<input id="save-city" maxlength="120"></label><label>Superficie vivienda (m²)<input id="save-surface" type="number" min="0" step="any"></label><label>Dormitorios<input id="save-beds" type="number" min="0" step="1"></label><label>Baños<input id="save-baths" type="number" min="0" step="1"></label><label>Referencia del anuncio<input id="save-reference" maxlength="120"></label><label class="full">Imágenes: una URL HTTPS por línea, hasta 8<textarea id="save-images" rows="3" placeholder="https://…"></textarea></label><label class="full">Notas y gastos pendientes<textarea id="save-notes" rows="3" maxlength="3000" placeholder="Comunidad, IBI, derramas, dudas para la visita…"></textarea></label></div><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-save">Cancelar</button><button class="button primary" id="save-submit" type="submit">Añadir y calcular</button></div></form></dialog>
 <input type="file" id="import-file" accept="application/json,.json" hidden>
 <dialog id="photo-dialog" class="photo-dialog" aria-label="Fotos de la vivienda"></dialog>
-<script type="module" src="./app.mjs?v=12"></script>
+<script type="module" src="./app.mjs?v=13"></script>
 </body>
 </html>

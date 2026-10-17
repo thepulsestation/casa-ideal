@@ -9,7 +9,7 @@ const memory = { values: new Map(), getItem(key) { return this.values.get(key) ?
 let instance=0;
 const shared = id => normalizeScenario({id,name:'Casa de prueba',budget:{incomes:[{monthly:2100,payments:12},{monthly:1700,payments:14}]}});
 const tick = () => new Promise(resolve=>setImmediate(resolve));
-const savedHome=id=>({...shared(id),financingPlanVersion:2,purchasePlanVersion:1,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-02T00:00:00Z'});
+const savedHome=id=>({...shared(id),financingPlanVersion:2,purchasePlanVersion:1,discountBreakdownVersion:1,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-02T00:00:00Z'});
 
 // A small DOM substitute tests application wiring; no browser or external network.
 function boot({hash='#resumen',draft=null,joined=false,scenarios=[],signupGate=null,localScenarios=[],draftMeta=null,saveGate=null,failSaves=0,listGate=null}={}) {
@@ -457,4 +457,17 @@ test('the comparison selectors and columns exclude the reserved shared-budget re
  assert.ok(table);assert.ok(table.includes(first.name));assert.ok(table.includes(second.name));
  assert.ok(!app.html.includes(`data-compare="${PROFILE_TEST_ID}"`));assert.ok(!table.includes(PROFILE_TEST_ID));
  assert.equal(Number(app.node('saved-count').textContent),2);
+});
+
+
+test('purchase fee mode reveals its inputs and fixed arras are wired to the calculation',async()=>{
+ const app=boot({joined:true,hash:'#compra',scenarios:[savedHome('fee-house')]});await app.loading;
+ const mode=app.node('field-purchaseCosts.mode');mode.value='itemized';await mode.handlers.change({target:mode});
+ assert.ok(app.html.includes('data-field="purchaseCosts.appraisal"'));
+ assert.ok(!app.html.includes('data-field="purchaseCosts.provisionAmount"'));
+ const depositMode=app.node('deposit-input-mode');depositMode.value='fixed';await depositMode.handlers.change({target:depositMode});
+ const amount=app.node('field-cash.depositAmount');amount.value='5000';await amount.handlers.change({target:amount});
+ assert.equal(app.draft().cash.depositAmount,5000);
+ depositMode.value='percent';await app.node('deposit-input-mode').handlers.change({target:depositMode});
+ assert.equal(app.draft().cash.depositAmount,null);
 });

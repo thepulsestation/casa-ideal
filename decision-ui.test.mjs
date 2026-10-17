@@ -117,3 +117,14 @@ test('a home without an origin has pending commute indicators without a relative
  assert.ok(!html.includes('href="null"'));assert.ok(!html.includes('href=""'));
  assert.ok(html.includes('Por comprobar'));
 });
+
+
+test('pending arras never claims a confirmed release when nominal funding is below the seller balance',()=>{
+ const s=adoptPurchaseProvision(planningScenario());s.icf.enabled=false;
+ const r=calculateScenario(s);assert.equal(r.cash.depositReleasePending,false);
+ const html=renderDepositFunding(s,r,ui);
+ assert.ok(!html.includes('Habéis marcado la compensación como confirmada'));
+ assert.ok(html.includes('sigue pendiente de confirmar'));
+ s.cash.depositFundingMode='offset-confirmed';
+ assert.ok(renderDepositFunding(s,calculateScenario(s),ui).includes('Habéis marcado la compensación como confirmada'));
+});

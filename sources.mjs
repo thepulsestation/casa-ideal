@@ -1,8 +1,20 @@
-// Fuentes primarias revisadas el 17 de octubre de 2026 (Europe/Madrid).
+// Fuentes primarias revisadas el 18 de octubre de 2026 (Europe/Madrid).
 // Las cifras bancarias publicitadas son ejemplos; prevalecen la oferta y la FEIN.
-export const SOURCES_REVIEWED_AT = '2026-10-17';
+export const SOURCES_REVIEWED_AT = '2026-10-18';
 
 export const SOURCES = [
+  {
+    id: 'navas-2026',
+    title: 'Navàs · Ordenanzas fiscales de 2026',
+    url: 'https://www.navas.cat/wp-content/uploads/2026/03/OOFF20260324-.pdf',
+    summary: 'IBI urbano: 0,815 % de la base liquidable. Residuos de viviendas: 136,50 € de parte básica y variable según aportaciones. Falta conocer el recibo y las circunstancias de cada inmueble; no permite confirmar la cuota de comunidad.',
+  },
+  {
+    id: 'atc-ultima-renta',
+    title: 'ATC · Qué declaración de IRPF se usa',
+    url: 'https://atc.gencat.cat/es/tributs/itpajd/tpo/tarifes-tipus/exemples-ultima-declaracio-irpf/',
+    summary: 'La declaración aplicable al beneficio fiscal depende de la fecha de compra, la campaña y la presentación. Para el límite de renta se usan las bases fiscales menos el mínimo personal y familiar, no el salario bruto.',
+  },
   {
     id: 'atc-itp',
     title: 'ATC · ITP: tipos y requisitos',
