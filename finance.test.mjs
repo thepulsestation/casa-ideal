@@ -4,6 +4,7 @@ import {
   DEFAULT_SCENARIO, normalizeScenario, monthlyPayment, amortizeLoan, calculateScenario,
   calculateTransferTax, standardCataloniaTransferTax, validateScenario,
   calculateGiftTax, calculateMotherTransfer,
+  compareFamilyLoanTerms,
 } from './finance.mjs';
 
 const close = (actual, expected, tolerance = 0.005) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} ≠ ${expected}`);
@@ -560,6 +561,112 @@ test('legacy unknown loan terms stay unknown while receiving the new buffer defa
   assert.equal(r.budget.assumedLoanTerms, false);
   assert.equal(r.cash.familyExtraBuffer, 3000);
   for (const familyLoan of [{ extraBuffer: -1 }, { assumedTerms: 'true' }]) assert.equal(calculateScenario({ familyLoan }).valid, false);
+});
+
+test('80% bank plus 20% ICF leaves the mother only purchase expenses and extra buffer', () => {
+  const r = calculateScenario({
+    purchasePrice: 250000, tax: { buyers: youngBuyers }, icf: { enabled: true, eligibilityConfirmed: false },
+    purchaseCosts: { appraisal: 500, notary: 1000, registry: 500, agency: 1000 },
+    familyLoan: { enabled: true, rate: 5, years: 10, assumedTerms: true },
+    motherTransfer: { repaymentMode: 'same-as-bank' },
+    cash: { familyLoanAvailableBeforeDeposit: true },
+  });
+  assert.equal(r.financing.bankMortgage, 200000);
+  assert.equal(r.financing.icf, 50000);
+  assert.equal(r.financing.bankShareOfPrice, 0.8);
+  assert.equal(r.financing.icfShareOfPrice, 0.2);
+  assert.equal(r.financing.uncoveredPurchasePrice, 0);
+  assert.equal(r.financing.icfHypothetical, true);
+  assert.equal(r.icf.eligibilityConfirmed, false);
+  assert.equal(r.familyLoan.principal, 18500);
+  assert.equal(r.cash.motherFundingNeed.uncoveredPurchasePrice, 0);
+  assert.equal(r.cash.motherFundingNeed.purchaseTax, 12500);
+  assert.equal(r.cash.motherFundingNeed.purchaseFees, 3000);
+  assert.equal(r.cash.motherFundingNeed.extraBuffer, 3000);
+  assert.equal(r.cash.motherFundingNeed.netAfterSavings, 18500);
+  assert.equal(r.cash.fundingGap, 0);
+  assert.equal(r.cash.beforeMortgageGap, 7000, 'the mother loan must not silently grow to bridge arras');
+  assert.ok(r.cash.closingNetPayment < 0);
+  assert.equal(r.cash.potentialClosingSurplus, -r.cash.closingNetPayment);
+  assert.equal(r.cash.fundingTimingRequiresConfirmation, true);
+  assert.ok(r.warnings.some((warning) => warning.includes('No presupone que el banco o el ICF reintegren las arras')));
+});
+
+test('ICF caps and low appraisals remain visible as uncovered price in mother funding needs', () => {
+  const lowAppraisal = calculateScenario({ purchasePrice: 250000, appraisalValue: 220000,
+    tax: { buyers: youngBuyers }, icf: { enabled: true }, familyLoan: { enabled: true, rate: 5, years: 10 },
+  });
+  assert.equal(lowAppraisal.financing.bankMortgage, 176000);
+  assert.equal(lowAppraisal.financing.icf, 44000);
+  assert.equal(lowAppraisal.financing.uncoveredPurchasePrice, 30000);
+  assert.equal(lowAppraisal.cash.motherFundingNeed.uncoveredPurchasePrice, 30000);
+  assert.equal(lowAppraisal.familyLoan.principal, 45500);
+  const capped = calculateScenario({ purchasePrice: 300000, tax: { buyers: youngBuyers }, icf: { enabled: true }, familyLoan: { enabled: true, rate: 5, years: 10 } });
+  assert.equal(capped.financing.uncoveredPurchasePrice, 10000);
+  assert.equal(capped.familyLoan.principal, 28000);
+});
+
+test('explicit same-as-bank family repayment follows bank terms and allocates 50/50 without doubling household debt', () => {
+  const input = { familyLoan: { enabled: true, amount: 30000, rate: 5, years: 15, assumedTerms: true },
+    motherTransfer: { repaymentMode: 'same-as-bank', familyRate: 0, familyYears: 10 },
+    budget: { incomes: [{ monthly: 3500, payments: 12 }], householdIncomes: [{ id: 'mother', monthly: 1000, payments: 14 }], existingDebtMonthly: 100 },
+  };
+  const r = calculateScenario(input);
+  close(r.motherTransfer.familyMonthlyRepayment, r.familyLoan.monthlyPayment);
+  assert.equal(r.motherTransfer.effectiveFamilyRate, 5);
+  assert.equal(r.motherTransfer.effectiveFamilyYears, 15);
+  assert.equal(r.motherTransfer.repaymentTermsAssumed, true);
+  close(r.motherTransfer.allocations[0].monthlyRepayment, r.familyLoan.monthlyPayment / 2);
+  close(r.motherTransfer.allocations[1].monthlyRepayment, r.familyLoan.monthlyPayment / 2);
+  close(r.budget.debtRatio, (r.mortgage.monthlyPayment + 100 + r.familyLoan.monthlyPayment) / 3500);
+  close(r.budget.familyDebtRatio, (r.mortgage.monthlyPayment + 100 + r.familyLoan.monthlyPayment) / 4500);
+  close(r.budget.totalMonthly, r.budget.homeMonthly + 100 + r.familyLoan.monthlyPayment);
+  close(r.budget.motherNetExternalCostMonthly, 0);
+  close(r.lifetime.totalDebtPrincipal, r.mortgage.principal + r.familyLoan.principal);
+  const longer = calculateScenario({ ...input, familyLoan: { ...input.familyLoan, years: 20 } });
+  assert.equal(longer.motherTransfer.effectiveFamilyYears, 20);
+  close(longer.motherTransfer.familyMonthlyRepayment, longer.familyLoan.monthlyPayment);
+  assert.equal(input.motherTransfer.familyYears, 10, 'custom references are not overwritten');
+  const custom = calculateScenario({ ...input, motherTransfer: { ...input.motherTransfer, repaymentMode: 'custom' } });
+  close(custom.motherTransfer.familyMonthlyRepayment, 30000 / 120);
+  assert.equal(custom.motherTransfer.effectiveFamilyRate, 0);
+});
+
+test('same-as-bank never substitutes custom dates when bank terms are unknown', () => {
+  const r = calculateScenario({ familyLoan: { enabled: true, amount: 20000 }, motherTransfer: { repaymentMode: 'same-as-bank', familyRate: 0, familyYears: 10 } });
+  assert.equal(r.familyLoan.monthlyPayment, null);
+  assert.equal(r.motherTransfer.familyMonthlyRepayment, null);
+  assert.equal(r.motherTransfer.termsKnown, false);
+  assert.equal(r.budget.borrowerDebtRatioIncomplete, true);
+  for (const motherTransfer of [{ repaymentMode: 'automatic-approved' }, { allocations: [{ share: 0.4 }] }]) {
+    assert.equal(calculateScenario({ familyLoan: { enabled: true }, motherTransfer }).valid, false);
+  }
+});
+
+test('loan-term comparisons are explicit hypotheses and keep scenario and ICF eligibility unchanged', () => {
+  const input = { purchasePrice: 250000, tax: { buyers: youngBuyers }, icf: { enabled: true, eligibilityConfirmed: false },
+    familyLoan: { enabled: true, rate: 5, years: 10 }, motherTransfer: { repaymentMode: 'same-as-bank' },
+    budget: { incomes: [{ monthly: 4000, payments: 12 }] },
+  };
+  const snapshot = JSON.stringify(input);
+  const rows = compareFamilyLoanTerms(input);
+  assert.deepEqual(rows.map((row) => row.years), [10, 15, 20]);
+  assert.ok(rows.every((row) => row.valid && row.approvalRequired && row.termsAssumed));
+  assert.ok(rows.every((row) => row.rate === 5 && row.principal === 15500));
+  assert.ok(rows[0].monthlyPayment > rows[1].monthlyPayment && rows[1].monthlyPayment > rows[2].monthlyPayment);
+  assert.ok(rows[0].totalInterest < rows[1].totalInterest && rows[1].totalInterest < rows[2].totalInterest);
+  assert.ok(rows[0].borrowerDebtRatio > rows[1].borrowerDebtRatio);
+  for (const row of rows) {
+    close(row.familyMonthlyRepayment, row.monthlyPayment);
+    assert.equal(row.result.icf.eligibilityConfirmed, false);
+  }
+  assert.equal(JSON.stringify(input), snapshot);
+  assert.equal(compareFamilyLoanTerms(input, [12])[0].years, 12);
+  assert.equal(compareFamilyLoanTerms(input, [0])[0].valid, false);
+  assert.equal(compareFamilyLoanTerms(input, null).length, 0);
+  const unknown = compareFamilyLoanTerms({ familyLoan: { rate: null, years: null } }, [15])[0];
+  assert.equal(unknown.rate, 5);
+  assert.equal(unknown.result.icf.enabled, false, 'comparisons do not silently enable ICF');
 });
 
 

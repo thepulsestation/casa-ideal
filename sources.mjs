@@ -37,7 +37,19 @@ export const SOURCES = [
     id: 'icf-emancipacio',
     title: 'ICF · Préstec Habitatge Emancipació',
     url: 'https://www.icf.cat/es/prestecs/habitatge/icf-habitatge-emancipacio',
-    summary: 'Préstamo al 0 % y sin comisiones: hasta el 20 % del menor entre precio y tasación, máximo 50.000 €. Se devuelve después de la hipoteca, durante cinco años. La vivienda queda protegida permanentemente.',
+    summary: 'Préstamo para solicitantes de 18 a 40 años incluidos, al 0 % y sin comisiones: hasta el 20 % del menor entre precio y tasación, máximo 50.000 €. Se devuelve tras la hipoteca, en cinco años. La vivienda queda protegida permanentemente.',
+  },
+  {
+    id: 'icf-guia',
+    title: 'ICF · Guía de solicitud y disposición del dinero',
+    url: 'https://www.icf.cat/es/prestecs/habitatge/icf-habitatge-emancipacio/guia',
+    summary: 'Los titulares de ICF y de la hipoteca deben coincidir. Tras firmar, el banco ingresa la financiación conjunta y la transfiere al vendedor. La guía no garantiza anticipar las arras ni reintegrar anticipos anteriores.',
+  },
+  {
+    id: 'icf-bases-2026',
+    title: 'DOGC · Resolución TER/1649/2026: modificación de bases ICF',
+    url: 'https://dogc.gencat.cat/es/document-del-dogc/index.html?documentId=1045529',
+    summary: 'Modificación de las bases reguladoras del programa Emancipació, enlazada por la ficha oficial del ICF. Los requisitos y la aprobación deben contrastarse con la convocatoria y la resolución aplicables.',
   },
   {
     id: 'ico-convenio',
@@ -50,6 +62,12 @@ export const SOURCES = [
     title: 'Banco de España · Gastos de la hipoteca',
     url: 'https://clientebancario.bde.es/pcb/es/menu-horizontal/productosservici/financiacion/hipotecas/guia-textual/primerospasoscon/Gastos_asociados_a_la_hipoteca.html',
     summary: 'En la constitución de la hipoteca, el cliente paga la tasación y el banco asume notaría, registro, impuestos y gestoría. Los gastos propios de comprar la vivienda se presupuestan por separado.',
+  },
+  {
+    id: 'bde-endeudamiento',
+    title: 'Banco de España · Endeudamiento para la primera hipoteca',
+    url: 'https://clientebancario.bde.es/pcb/es/blog/consejos-para-firmar-tu-primera-hipoteca.html',
+    summary: 'Como orientación, las entidades suelen considerar un endeudamiento del 30–35 % de los ingresos, incluyendo otras deudas. No es una garantía de aprobación ni un umbral legal universal; la entidad evalúa la solvencia completa.',
   },
   {
     id: 'bde-seguros',
@@ -164,9 +182,9 @@ export const TAX_NOTES = [
   },
   {
     id: 'sin-itp-cero-joven',
-    title: 'Ser joven no convierte el ITP en cero',
-    sourceIds: ['atc-ajd-joven', 'aeat-iva'],
-    summary: 'La bonificación juvenil del 100 % corresponde al AJD de adquisición cuando resulte aplicable. En una primera entrega por promotor, el IVA general del 10 % sigue existiendo. Para una compra usada, se estima ITP según el caso.',
+    title: 'Ser joven o usar ICF no convierte el ITP en cero',
+    sourceIds: ['atc-itp', 'atc-ajd-joven', 'aeat-iva', 'icf-emancipacio'],
+    summary: 'ICF no elimina los impuestos de compra. La bonificación juvenil del 100 % corresponde al AJD cuando resulte aplicable; no elimina el IVA. En vivienda usada se calcula el ITP de cada comprador. Un 0 % individual requiere un supuesto fiscal específico confirmado.',
   },
   {
     id: 'valor-referencia',
@@ -177,8 +195,8 @@ export const TAX_NOTES = [
   {
     id: 'icf-requisitos',
     title: 'ICF requiere un estudio específico',
-    sourceIds: ['icf-emancipacio'],
-    summary: 'Todos los solicitantes: entre 18 y 40 años incluidos, empadronamiento en Cataluña, primera vivienda habitual y solvencia. La unidad de convivencia futura debe cumplir el límite de 6,5 veces el IRSC. La vivienda necesita cédula vigente, no puede estar en construcción ni previamente protegida.',
+    sourceIds: ['icf-emancipacio', 'icf-guia', 'icf-bases-2026'],
+    summary: 'Todos los solicitantes: 18–40 años incluidos, empadronamiento en Cataluña, primera vivienda habitual y solvencia. El límite de 6,5 IRSC cuenta los ingresos brutos anuales de toda la convivencia futura, incluidos quienes no piden el préstamo. Deben coincidir los titulares de ICF e hipoteca. No basta la nómina neta.',
   },
   {
     id: 'icf-250000',
@@ -201,8 +219,14 @@ export const TAX_NOTES = [
   {
     id: 'arras-anticipo',
     title: 'Las arras requieren liquidez antes de la escritura',
-    sourceIds: ['cccat-arras'],
-    summary: 'Son parte del precio, no un gasto adicional que se sume dos veces. Su importe y calendario dependen del contrato. La disponibilidad posterior del préstamo o del ICF no asegura tener ese dinero el día de las arras.',
+    sourceIds: ['cccat-arras', 'icf-guia'],
+    summary: 'Son parte del precio y no se suman dos veces. ICF se dispone en la firma, por lo que una reserva anterior necesita liquidez puente. Confirmar por escrito el circuito de anticipos y si pueden recuperarse: no se presume un reintegro para amortizar el préstamo de la madre.',
+  },
+  {
+    id: 'ratio-titulares',
+    title: 'El esfuerzo hipotecario considera las otras deudas',
+    sourceIds: ['bde-endeudamiento', 'lcci-solvencia'],
+    summary: 'La referencia del 35 % es orientativa. Al esfuerzo de los titulares se añaden sus cuotas existentes y las devoluciones que pacten con la madre. La cuota bancaria de ella se cuenta una vez en el hogar; no se atribuye automáticamente como deuda bancaria de los hijos.',
   },
   {
     id: 'prima-seguros',

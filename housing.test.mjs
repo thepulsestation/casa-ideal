@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeScenario } from './finance.mjs';
+import { normalizeScenario, calculateScenario } from './finance.mjs';
 import { createHousingScenario, updateHousingDetails, validateHousingDetails, safeImageUrl, getHousingDetails } from './housing.mjs';
 
 const details = overrides => ({ name: 'Piso de prueba', url: 'https://example.com/anuncio/1', purchasePrice: 190000, ...overrides });
@@ -130,14 +130,40 @@ test('bank conditions and personal tax profiles remain, while manual principal a
   assert.equal(fresh.tax.ajdRate, 0.015, 'an old property AJD exemption must not silently apply to the new property');
 });
 
-test('a new scenario has an explicitly assumed automatic family loan without inventing family repayment dates', () => {
+test('a new scenario has explicit bank and same-as-bank family hypotheses while retaining custom references', () => {
   const fresh = createHousingScenario(existing(), details());
   for (const [key, expected] of Object.entries({ enabled: true, amount: null, rate: 5, years: 10, assumedTerms: true, extraBuffer: 3000, maxAmount: 60000 })) assert.equal(fresh.familyLoan[key], expected);
   assert.equal(fresh.motherTransfer.familyYears, 12);
   assert.equal(fresh.motherTransfer.familyRate, 0);
+  assert.equal(fresh.motherTransfer.repaymentMode, 'same-as-bank');
+  assert.equal(fresh.financingPlanVersion, 2);
   assert.equal(fresh.motherTransfer.giftNotaryCost, 0);
   const withoutCalendar = createHousingScenario({}, details());
   assert.equal(withoutCalendar.motherTransfer.familyYears, null);
+  assert.equal(calculateScenario(withoutCalendar).motherTransfer.effectiveFamilyYears, 10);
+});
+
+test('new properties explore 80% mortgage plus ICF without changing saved disabled plans or claiming eligibility', () => {
+  const saved = normalizeScenario({ icf: { enabled: false, eligibilityConfirmed: false }, mortgage: { ltv: 0.9 },
+    motherTransfer: { repaymentMode: 'custom', familyRate: 0, familyYears: 12 },
+  });
+  const before = structuredClone(saved);
+  const fresh = createHousingScenario(saved, details({ purchasePrice: 200000 }));
+  assert.equal(fresh.mortgage.ltv, 0.8);
+  assert.equal(fresh.icf.enabled, true);
+  assert.equal(fresh.icf.eligibilityConfirmed, false);
+  assert.equal(fresh.icf.ltv, 0.2);
+  assert.equal(fresh.icf.maxAmount, 50000);
+  assert.equal(fresh.motherTransfer.repaymentMode, 'same-as-bank');
+  const r = calculateScenario(fresh);
+  assert.equal(r.financing.bankMortgage, 160000);
+  assert.equal(r.financing.icf, 40000);
+  assert.equal(r.financing.uncoveredPurchasePrice, 0);
+  assert.equal(r.icf.hypothetical, true);
+  assert.deepEqual(saved, before);
+  assert.equal(normalizeScenario(saved).icf.enabled, false);
+  assert.equal(calculateScenario(saved).icf.enabled, false);
+  assert.equal(updateHousingDetails(saved, { name: 'Plan guardado', purchasePrice: 200000 }).icf.enabled, false);
 });
 
 test('partial editing changes metadata without resetting saved financial data or timestamps', () => {

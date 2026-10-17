@@ -1,4 +1,4 @@
-import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=4';
+import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=5';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
@@ -134,7 +134,8 @@ export function updateHousingDetails(scenario, patch = {}) {
 }
 
 /**
- * Starts a different property using the same family budget and bank conditions.
+ * Starts a different property using the same family budget and editable TIN.
+ * New properties explore Sabadell 80% + ICF up to 20%, pending eligibility.
  * The result deliberately has no identity/timestamps until the caller saves it.
  * Property amounts and approvals are reset; no eligibility or price is inferred.
  */
@@ -146,6 +147,7 @@ export function createHousingScenario(current = {}, rawDetails = {}) {
   fresh.budget = { ...structuredClone(source.budget), ...PROPERTY_BUDGET_DEFAULTS };
   fresh.mortgage = structuredClone(source.mortgage);
   fresh.mortgage.amount = null;
+  fresh.mortgage.ltv = 0.8;
   fresh.mortgage.discounts = fresh.mortgage.discounts.map(product => product.id === 'payroll' ? product : { ...product, cost: null, quoteKnown: false });
   // Personal ownership shares/rates and individually confirmed buyer profiles
   // are retained exactly; property-specific tax settings start from defaults.
@@ -165,10 +167,13 @@ export function createHousingScenario(current = {}, rawDetails = {}) {
     extraBuffer: 3000,
     maxAmount: 60000,
   };
-  // Keep actual family arrangements; never invent a repayment calendar.
+  // New scenarios use the explicitly chosen same-as-bank repayment hypothesis.
+  // Preserve custom terms as a reference; saved scenarios are never migrated.
   fresh.motherTransfer = structuredClone(source.motherTransfer);
   fresh.motherTransfer.giftNotaryCost = 0;
-  fresh.icf = { ...structuredClone(source.icf), eligibilityConfirmed: false };
+  if (fresh.motherTransfer.mode === 'family-loan') fresh.motherTransfer.repaymentMode = 'same-as-bank';
+  fresh.icf = { ...structuredClone(DEFAULT_SCENARIO.icf), enabled: true, eligibilityConfirmed: false };
   fresh.stress = structuredClone(source.stress);
+  fresh.financingPlanVersion = 2;
   return applyMetadata(fresh, details);
 }

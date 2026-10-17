@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LocalStore, CloudStore, getCloudConfig, setCloudConfig, clearCloudConfig } from './storage.mjs';
+import { LocalStore, CloudStore, getCloudConfig, setCloudConfig, clearCloudConfig, reconcileScenarioLists } from './storage.mjs';
 
 class MemoryStorage {
   values = new Map();
@@ -60,21 +60,35 @@ function mockSupabase() {
     }
     if (target.pathname === '/rest/v1/scenarios' && options.method === 'POST') {
       assert.equal(body.household_id, HOUSEHOLD_ID);
-      assert.equal(target.searchParams.get('on_conflict'), 'household_id,id');
+      assert.equal(target.searchParams.has('on_conflict'), false, 'new scenarios must never upsert deleted records');
       if (state.failNextSave) { state.failNextSave = false; return response({ message: 'Servicio no disponible' }, 503); }
+      if (state.rows.has(body.id)) return response({ code: '23505', message: 'Already exists' }, 409);
       const saved = { ...body, created_at: CREATED_AT, updated_at: UPDATED_AT };
       state.rows.set(saved.id, saved);
       return response([saved]);
     }
     if (target.pathname === '/rest/v1/scenarios') {
       assert.equal(target.searchParams.get('household_id'), `eq.${HOUSEHOLD_ID}`);
+      if (options.method === 'PATCH') {
+        if (state.failNextSave) { state.failNextSave = false; return response({ message: 'Servicio no disponible' }, 503); }
+        const existing = state.rows.get(target.searchParams.get('id').slice(3));
+        const expected = target.searchParams.get('updated_at')?.slice(3);
+        if (!existing || existing.updated_at !== expected) return response([]);
+        const saved = { ...existing, data: body.data, updated_at: new Date(Date.parse(existing.updated_at) + 1000).toISOString() };
+        state.rows.set(saved.id, saved);
+        return response([saved]);
+      }
       if (options.method === 'GET') {
         if (state.failNextList) { state.failNextList = false; return response({ message: 'Token expired' }, 401); }
-        return response([...state.rows.values()]);
+        const offset = Number(target.searchParams.get('offset') || 0);
+        const limit = Number(target.searchParams.get('limit') || 1000);
+        return response([...state.rows.values()].slice(offset, offset + limit));
       }
       if (options.method === 'DELETE') {
-        state.rows.delete(target.searchParams.get('id').slice(3));
-        return response(null, 204);
+        const existing = state.rows.get(target.searchParams.get('id').slice(3));
+        if (!existing || existing.updated_at !== target.searchParams.get('updated_at')?.slice(3)) return response([]);
+        state.rows.delete(existing.id);
+        return response([existing]);
       }
     }
     throw new Error(`Unexpected request: ${options.method} ${url}`);
@@ -262,12 +276,97 @@ test('a failed remote save leaves the local copy available and never claims succ
   await cloud.connect();
   await cloud.createHousehold();
   state.failNextSave = true;
-  await assert.rejects(() => cloud.save(home), /Servicio no disponible/);
+  await assert.rejects(() => cloud.save(home, { create: true }), /Servicio no disponible/);
   assert.equal(state.rows.size, 0);
   assert.equal(local.getScenarios()[0].id, home.id);
   state.offline = true;
   await assert.rejects(() => cloud.list(), /No se puede conectar/);
   assert.equal(local.getScenarios()[0].id, home.id);
+});
+
+test('online family lists never resurrect deleted local copies or prefer a future client clock', () => {
+  const stale = { id: 'deleted-house', name: 'Local stale', updatedAt: '2099-01-01T00:00:00Z' };
+  const remote = { id: 'shared-house', name: 'Server edit', updatedAt: UPDATED_AT };
+  const local = { ...remote, name: 'Old local edit', updatedAt: '2099-01-01T00:00:00Z' };
+  assert.deepEqual(reconcileScenarioLists({ localScenarios: [stale, local], remoteScenarios: [remote], cloudConnected: true }).map(row => row.name), ['Server edit']);
+  assert.deepEqual(reconcileScenarioLists({ localScenarios: [stale], remoteScenarios: [], cloudConnected: true }), []);
+  assert.equal(reconcileScenarioLists({ localScenarios: [stale], cloudConnected: false })[0].id, stale.id);
+});
+
+test('family reconciliation updates server cache and removes deleted family IDs while preserving unrelated homes', () => {
+  const store = new LocalStore(new MemoryStorage());
+  store.saveScenario({ id: 'unrelated', name: 'Local only' });
+  const scope = `${PUBLIC_URL}|${HOUSEHOLD_ID}`;
+  store.reconcileCloud([{ id: 'shared', name: 'Remote first', updatedAt: UPDATED_AT }], { scope });
+  store.saveScenario({ id: 'shared', name: 'Stale local', updatedAt: '2099-01-01T00:00:00Z' });
+  store.reconcileCloud([{ id: 'shared', name: 'Remote revision', updatedAt: UPDATED_AT }], { scope });
+  assert.equal(store.getScenarios().find(row => row.id === 'shared').name, 'Remote revision');
+  const result = store.reconcileCloud([], { scope });
+  assert.deepEqual(result.removedIds, ['shared']);
+  assert.deepEqual(store.getScenarios().map(row => row.id), ['unrelated']);
+  store.importJSON(backup([{ id: 'shared', name: 'Old restored copy' }]));
+  store.reconcileCloud([], { scope });
+  assert.deepEqual(store.getScenarios().map(row => row.id), ['unrelated']);
+  assert.equal(store.exportJSON().includes(HOUSEHOLD_ID), false, 'cache scope metadata is never exported');
+});
+
+test('cache reconciliation is scoped and validates the complete snapshot before writing', () => {
+  const store = new LocalStore(new MemoryStorage());
+  store.saveScenario({ id: 'legacy', name: 'Previously shared' });
+  store.reconcileCloud([{ id: 'other-family', name: 'Other family' }], { scope: 'project|other' });
+  store.reconcileCloud([], { scope: 'project|current', knownIds: ['legacy'] });
+  assert.deepEqual(store.getScenarios().map(row => row.id), ['other-family']);
+  const before = store.getScenarios();
+  for (const rows of [null, [{ id: 'valid' }, { id: '../bad' }], [{ id: 'duplicate' }, { id: 'duplicate' }]]) {
+    assert.throws(() => store.reconcileCloud(rows, { scope: 'project|other' }));
+    assert.deepEqual(store.getScenarios(), before);
+  }
+});
+
+test('stale edits/deletes conflict across clients and a deleted scenario cannot be upserted back', async () => {
+  const { cloud: a, state, fetch } = mockSupabase();
+  await a.connect(); await a.createHousehold();
+  const original = await a.save({ name: 'Initial' }, { create: true });
+  const b = new CloudStore(PUBLIC_URL, PUBLIC_KEY, { storage: new MemoryStorage(), fetch });
+  await b.connect(); await b.list();
+  const changed = await a.save({ ...original, name: 'A changed' }, { create: false, expectedUpdatedAt: original.updatedAt });
+  await assert.rejects(() => b.save({ ...original, name: 'B stale' }, { create: false, expectedUpdatedAt: original.updatedAt }), error => error.code === 'SCENARIO_CONFLICT');
+  await assert.rejects(() => b.delete(original.id, { expectedUpdatedAt: original.updatedAt }), error => error.code === 'SCENARIO_CONFLICT');
+  assert.equal(state.rows.get(original.id).data.name, 'A changed');
+  await a.delete(original.id, { expectedUpdatedAt: changed.updatedAt });
+  await assert.rejects(() => b.save(original, { create: false, expectedUpdatedAt: original.updatedAt }), error => error.code === 'SCENARIO_CONFLICT');
+  assert.equal(state.rows.has(original.id), false);
+  await b.list();
+  await assert.rejects(() => b.save(original, { create: true }), error => error.code === 'SCENARIO_CONFLICT');
+  assert.equal(state.rows.size, 0);
+});
+
+test('duplicate creates conflict rather than overwriting an existing household scenario', async () => {
+  const { cloud, state } = mockSupabase();
+  await cloud.connect(); await cloud.createHousehold();
+  await cloud.save({ id: 'same-id', name: 'First' }, { create: true });
+  await assert.rejects(() => cloud.save({ id: 'same-id', name: 'Second' }, { create: true }), error => error.code === 'SCENARIO_CONFLICT');
+  assert.equal(state.rows.get('same-id').data.name, 'First');
+});
+
+test('list obtains all pages before treating its response as an authoritative snapshot', async () => {
+  const { cloud, state } = mockSupabase();
+  await cloud.connect(); await cloud.createHousehold();
+  for (let i = 0; i < 1001; i++) state.rows.set(`house-${i}`, { id: `house-${i}`, data: { name: `House ${i}` }, created_at: CREATED_AT, updated_at: UPDATED_AT });
+  assert.equal((await cloud.list()).length, 1001);
+  assert.equal(state.requests.filter(request => request.url.pathname === '/rest/v1/scenarios').length, 2);
+});
+
+test('a malformed successful list response is an error, never an empty deletion snapshot', async () => {
+  for (const payload of [null, {}, [{ id: 'valid-id', data: { name: 'Missing dates' } }]]) {
+    const backend = mockSupabase();
+    const fetch = (url, options) => new URL(url).pathname === '/rest/v1/scenarios' && options.method === 'GET'
+      ? Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      : backend.fetch(url, options);
+    const cloud = new CloudStore(PUBLIC_URL, PUBLIC_KEY, { storage: backend.storage, fetch });
+    await cloud.connect(); await cloud.createHousehold();
+    await assert.rejects(() => cloud.list(), /lista completa|datos o fechas/);
+  }
 });
 
 test('housing exports exclude Auth sessions, public configuration, and invitation codes', async () => {

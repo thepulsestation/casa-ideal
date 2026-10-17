@@ -1,4 +1,4 @@
-import { calculateScenario } from './finance.mjs?v=4';
+import { calculateScenario } from './finance.mjs?v=5';
 
 /** HTML only. All editable controls use the app's existing data-field binding. */
 export function renderMotherTransfer(s, result, { field, check, select, section, notice, row, euro, pct, num }) {
@@ -9,13 +9,16 @@ export function renderMotherTransfer(s, result, { field, check, select, section,
     ['family-loan', 'Préstamo entre madre e hijos'],
     ['gift', 'Donación de madre a hijos'],
   ], 'Es una operación distinta del préstamo que ella firma con su banco.')}</div>`;
-  const loanFields = `<div class="form-grid section-gap">${field('Interés del préstamo entre madre e hijos', 'motherTransfer.familyRate', {
+  const loanFields = `<div class="form-grid section-gap">${select('Cómo devolvéis el dinero a mamá','motherTransfer.repaymentMode',[
+    ['same-as-bank','Los hijos cubrimos la misma cuota que paga mamá al banco'],
+    ['custom','Otro calendario pactado entre madre e hijos'],
+  ],'Es un supuesto del presupuesto y debe quedar reflejado en un contrato familiar aceptado por el banco.')}</div>${transfer.repaymentMode==='same-as-bank'?notice('La devolución de los hijos se calcula con el mismo importe, TIN y plazo del préstamo bancario de mamá. Esa devolución cuenta en vuestro esfuerzo hipotecario; en el presupuesto conjunto sólo se suma una vez la salida al banco. Si le abonáis intereses, confirmad también su tratamiento fiscal.','info'):`<div class="form-grid section-gap">${field('Interés del préstamo entre madre e hijos', 'motherTransfer.familyRate', {
     suffix: '%', nullable: true, max: 100,
     hint: '0 % es posible si se pacta así. No es el interés que cobra el banco a mamá.',
   })}${field('Plazo de devolución de hijos a mamá', 'motherTransfer.familyYears', {
     suffix: 'años', nullable: true, max: 50, step: 1,
     hint: 'Introduce el plazo real del contrato familiar. En blanco no se inventa una cuota.',
-  })}</div>${notice('Préstamo familiar: contrato, calendario de pagos y devoluciones reales. Se presenta el modelo 600 exento, generalmente en un mes. Si hay intereses, puede haber IRPF para mamá que esta estimación no calcula.', 'info')}`;
+  })}</div>`}<div class="form-grid section-gap">${transfer.allocations.map((allocation,i)=>field(`Parte de la devolución del hijo ${i+1}`,`motherTransfer.allocations.${i}.share`,{suffix:'%',scale:100,max:100,hint:'El reparto debe sumar el 100 %. Es independiente del porcentaje de propiedad.'})).join('')}</div>${notice('Préstamo familiar: contrato, calendario de pagos y devoluciones reales. Se presenta el modelo 600 exento, generalmente en un mes. Si hay intereses, puede haber IRPF para mamá que esta estimación no calcula.', 'info')}`;
   const giftFields = `<div class="section-gap">${check('La donación se formalizará en escritura pública dentro del plazo legal', 'motherTransfer.giftPublicDeed',
     'La estimación usa la tarifa reducida madre a hijos cuando se cumple. Sin escritura usa la tarifa general.')}</div>
     <div class="form-grid section-gap">${field('Notaría de la donación', 'motherTransfer.giftNotaryCost', {

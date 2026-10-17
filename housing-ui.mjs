@@ -1,4 +1,4 @@
-import {safeImageUrl} from './housing.mjs?v=1';
+import {safeImageUrl} from './housing.mjs?v=2';
 export const hasBudgetEstimates=(s,r)=>Boolean(r.budget?.propertyCostsEstimated||r.familyLoan?.termsAssumed||s.familyLoan?.assumedTerms);
 export function renderPropertyGallery(images,name,esc){
  const safe=Array.isArray(images)?images.map(safeImageUrl).filter(Boolean).slice(0,8):[];

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFamilyLink, parseFamilyRoute, selectInitialFamilyScenario } from './family-access.mjs';
+import { buildFamilyLink, buildFamilyHash, parseFamilyRoute, selectInitialFamilyScenario } from './family-access.mjs';
 
 const CODE = 'ab12'.repeat(12);
 const SCENARIO_ID = 'house_123-example';
-const result = (view = 'resumen', inviteCode = null, scenarioId = null, error = null) => ({ view, inviteCode, scenarioId, error });
+const result = (view = 'resumen', inviteCode = null, scenarioId = null, error = null, autoJoin = false, version = 1) => ({ view, inviteCode, scenarioId, error, autoJoin, version });
 
 test('a family link roundtrips through the fragment while discarding old query/hash', () => {
   const link = buildFamilyLink('https://example.github.io/casa-ideal/?old=value#presupuesto', CODE.toUpperCase(), SCENARIO_ID);
@@ -12,15 +12,39 @@ test('a family link roundtrips through the fragment while discarding old query/h
   assert.equal(url.origin, 'https://example.github.io');
   assert.equal(url.pathname, '/casa-ideal/');
   assert.equal(url.search, '');
-  assert.equal(url.hash, `#familia?codigo=${CODE}&vivienda=${SCENARIO_ID}`);
+  assert.equal(url.hash, `#familia?codigo=${CODE}&acceso=2&entrar=1&vivienda=${SCENARIO_ID}`);
   assert.equal(link.includes('old=value'), false);
-  assert.deepEqual(parseFamilyRoute(url.hash), result('familia', CODE, SCENARIO_ID));
+  assert.deepEqual(parseFamilyRoute(url.hash), result('familia', CODE, SCENARIO_ID, null, true, 2));
 });
 
 test('a family-only link contains exactly the invitation and public application path', () => {
   const link = buildFamilyLink('https://example.com/calculadora?access_token=fictional&income=999#old', CODE);
-  assert.equal(link, `https://example.com/calculadora#familia?codigo=${CODE}`);
-  assert.deepEqual(parseFamilyRoute(new URL(link).hash), result('familia', CODE));
+  assert.equal(link, `https://example.com/calculadora#familia?codigo=${CODE}&acceso=2&entrar=1`);
+  assert.deepEqual(parseFamilyRoute(new URL(link).hash), result('familia', CODE, null, null, true, 2));
+});
+
+test('versioned private fragments retain automatic access across navigation and bookmarks', () => {
+  for (const view of ['viviendas', 'resumen', 'compra', 'hipoteca', 'presupuesto', 'fuentes', 'familia']) {
+    const hash = buildFamilyHash(view, CODE, SCENARIO_ID);
+    assert.deepEqual(parseFamilyRoute(hash), result(view, CODE, SCENARIO_ID, null, true, 2));
+    const link = buildFamilyLink('https://example.com/app/?old=value', CODE, SCENARIO_ID, { view });
+    assert.equal(new URL(link).hash, hash);
+    assert.equal(new URL(link).search, '');
+  }
+  assert.deepEqual(parseFamilyRoute(buildFamilyHash('familia', CODE, null, { autoJoin: false })), result('familia', CODE, null, null, false, 2));
+  assert.deepEqual(parseFamilyRoute(`#familia?codigo=${CODE}`), result('familia', CODE));
+  assert.deepEqual(parseFamilyRoute(`#familia?codigo=${CODE}&entrar=1`), result('familia', CODE, null, null, true, 1));
+});
+
+test('unsupported versions and invalid auto-entry flags never trigger automatic access', () => {
+  for (const hash of [`#familia?codigo=${CODE}&acceso=3&entrar=1`, `#resumen?codigo=${CODE}&acceso=2&entrar=yes`, `#familia?acceso=2&entrar=1`, `#resumen?codigo=${CODE}&acceso=2&entrar=1&entrar=0`]) {
+    const parsed = parseFamilyRoute(hash);
+    assert.equal(parsed.inviteCode, null);
+    assert.equal(parsed.autoJoin, false);
+    assert.equal(typeof parsed.error, 'string');
+  }
+  assert.throws(() => buildFamilyHash('unknown', CODE));
+  assert.throws(() => buildFamilyHash('resumen', CODE, null, { autoJoin: 'yes' }));
 });
 
 test('HTTPS is required except for explicit localhost development addresses', () => {

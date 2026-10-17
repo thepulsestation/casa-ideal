@@ -48,6 +48,7 @@ export const DEFAULT_SCENARIO = Object.freeze({
   familyLoan: { enabled: false, amount: null, maxAmount: 60000, rate: null, years: null, extraBuffer: 3000, assumedTerms: false, originationFeePercent: 0, originationFeeFixed: 0 },
   motherTransfer: {
     mode: 'family-loan',
+    repaymentMode: 'custom',
     allocations: [
       { share: 0.5, giftReductionEligible: false, preExistingWealth: 0 },
       { share: 0.5, giftReductionEligible: false, preExistingWealth: 0 },
@@ -297,19 +298,29 @@ export function calculateMotherTransfer({
   amount = 0, mode = 'family-loan', allocations = DEFAULT_SCENARIO.motherTransfer.allocations,
   familyRate = 0, familyYears = null, giftPublicDeed = true, giftNotaryCost = 0,
   ownershipShares = [], coOwnerSpouseConfirmed = false,
+  repaymentMode = 'custom', bankLoanRate = null, bankLoanYears = null, bankLoanTermsAssumed = false,
 } = {}) {
   const gross = nonnegative(amount);
   const warnings = [];
   if (mode === 'family-loan') {
-    const termsKnown = gross === 0 || (familyRate != null && familyYears != null);
-    const repayment = gross > 0 && termsKnown ? amortizeLoan(gross, n(familyRate), n(familyYears)) : null;
+    const effectiveFamilyRate = repaymentMode === 'same-as-bank' ? bankLoanRate : familyRate;
+    const effectiveFamilyYears = repaymentMode === 'same-as-bank' ? bankLoanYears : familyYears;
+    const termsKnown = gross === 0 || (effectiveFamilyRate != null && effectiveFamilyYears != null);
+    const repayment = gross > 0 && termsKnown ? amortizeLoan(gross, n(effectiveFamilyRate), n(effectiveFamilyYears)) : null;
+    const repaymentTermsAssumed = repaymentMode === 'same-as-bank' && bankLoanTermsAssumed === true;
+    const familyMonthlyRepayment = gross === 0 ? 0 : repayment?.monthlyPayment ?? null;
+    const rows = allocations.map((allocation) => ({
+      ...allocation, share: nonnegative(allocation.share), amount: gross * nonnegative(allocation.share),
+      monthlyRepayment: familyMonthlyRepayment == null ? null : familyMonthlyRepayment * nonnegative(allocation.share),
+    }));
     if (gross > 0) {
       warnings.push('El préstamo entre madre e hijos requiere contrato, calendario y devoluciones reales; modelo 600 exento, generalmente dentro de un mes.');
       if (!termsKnown) warnings.push('Falta plazo o interés del préstamo interno: no se puede completar la carga contractual de los titulares ante el banco.');
-      if (nonnegative(familyRate) > 0) warnings.push('Los intereses del préstamo familiar pueden tributar para la madre; ese IRPF no se calcula.');
+      if (repaymentMode === 'same-as-bank') warnings.push('Por elección expresa, la devolución de los hijos replica el interés y el plazo bancarios de la madre. Debe acordarse y documentarse; no acredita aprobación de la operación.');
+      if (nonnegative(effectiveFamilyRate) > 0) warnings.push('Los intereses del préstamo familiar pueden tributar para la madre; ese IRPF no se calcula.');
     }
-    return { mode, amount: gross, giftTax: 0, notaryCost: 0, totalCosts: 0, allocations: [],
-      familyMonthlyRepayment: gross === 0 ? 0 : repayment?.monthlyPayment ?? null,
+    return { mode, repaymentMode, amount: gross, giftTax: 0, notaryCost: 0, totalCosts: 0, allocations: rows,
+      familyMonthlyRepayment, effectiveFamilyRate, effectiveFamilyYears, repaymentTermsAssumed,
       termsKnown, costsIncomplete: false, repayment, warnings };
   }
   const rows = allocations.map((allocation, index) => {
@@ -333,8 +344,9 @@ export function calculateMotherTransfer({
     warnings.push('Donación: el modelo 651 y su pago tienen, con carácter general, plazo de un mes desde la entrega. La donación no elimina la deuda bancaria de la madre.');
     if (rows.some((row) => row.reduction > 0)) warnings.push('Reducción por primera vivienda: confirma edad hasta 36 años o discapacidad, IRPF, propiedad íntegra o excepción legal, escritura en un mes con destino expreso, compra en seis meses y límites acumulados de todas las donaciones.');
   }
-  return { mode, amount: gross, giftTax, notaryCost, totalCosts: giftTax + notaryCost,
+  return { mode, repaymentMode, amount: gross, giftTax, notaryCost, totalCosts: giftTax + notaryCost,
     allocations: rows, familyMonthlyRepayment: 0, termsKnown: true,
+    effectiveFamilyRate: null, effectiveFamilyYears: null, repaymentTermsAssumed: false,
     costsIncomplete: gross > 0 && giftPublicDeed && notaryCost === 0, repayment: null, warnings };
 }
 
@@ -419,14 +431,19 @@ export function validateScenario(input = {}) {
     if (n(s.familyLoan.amount) > n(s.familyLoan.maxAmount)) errors.push('El préstamo de la madre supera el límite introducido.');
     warnings.push('El origen de los fondos y la deuda familiar deben comunicarse al banco. Préstamo familiar y donación tienen trámites distintos.');
     if (!['family-loan', 'gift'].includes(s.motherTransfer.mode)) errors.push('Indica si la entrega de la madre es un préstamo familiar o una donación.');
+    if (!['custom', 'same-as-bank'].includes(s.motherTransfer.repaymentMode)) errors.push('Selecciona calendario familiar propio o devolución igual a la cuota bancaria de la madre.');
+    const allocations = s.motherTransfer.allocations;
+    if (!allocations.length || Math.abs(sum(allocations.map((allocation) => n(allocation.share))) - 1) > 0.000001) errors.push('El reparto de la entrega a los hijos debe sumar el 100%.');
+    allocations.forEach((allocation, index) => {
+      numeric(allocation.share, `Reparto entre hijos ${index + 1}`, 0, 1);
+      optionalText(allocation.label, `Nombre receptor ${index + 1}`);
+    });
     if (s.motherTransfer.mode === 'family-loan') {
       numeric(s.motherTransfer.familyRate, 'Interés del préstamo entre madre e hijos', 0, 100, true);
       numeric(s.motherTransfer.familyYears, 'Plazo del préstamo entre madre e hijos', 1 / 12, 50, true);
       if (s.motherTransfer.familyYears != null && !Number.isInteger(n(s.motherTransfer.familyYears) * 12)) errors.push('El préstamo entre madre e hijos debe tener un número entero de meses.');
     } else {
       numeric(s.motherTransfer.giftNotaryCost, 'Notaría de la donación');
-      const allocations = Array.isArray(s.motherTransfer.allocations) ? s.motherTransfer.allocations : [];
-      if (!allocations.length || Math.abs(sum(allocations.map((allocation) => n(allocation.share))) - 1) > 0.000001) errors.push('El reparto de la donación debe sumar el 100%.');
       allocations.forEach((allocation, index) => {
         numeric(allocation.share, `Porcentaje donación ${index + 1}`, 0, 1);
         numeric(allocation.preExistingWealth, `Patrimonio previo donatario ${index + 1}`);
@@ -504,7 +521,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const tax = calculateTransferTax({ purchasePrice: price, referenceValue: s.referenceValue, declaredValue: s.declaredValue, ...s.tax });
   warnings.push(...tax.warnings);
   const icfPrincipal = s.icf.enabled ? Math.min(lendingBase * n(s.icf.ltv), n(s.icf.maxAmount), Math.max(0, price - principal)) : 0;
-  const icf = { enabled: !!s.icf.enabled, principal: icfPrincipal, rate: 0, monthlyPaymentNow: 0, deferredMonthlyPayment: icfPrincipal / Math.max(1, n(s.icf.repaymentYears) * 12), repaymentYears: n(s.icf.repaymentYears), startsAfterMortgageYears: n(s.mortgage.years), eligibilityConfirmed: s.icf.eligibilityConfirmed === true };
+  const icf = { enabled: !!s.icf.enabled, principal: icfPrincipal, rate: 0, monthlyPaymentNow: 0, deferredMonthlyPayment: icfPrincipal / Math.max(1, n(s.icf.repaymentYears) * 12), repaymentYears: n(s.icf.repaymentYears), startsAfterMortgageYears: n(s.mortgage.years), eligibilityConfirmed: s.icf.eligibilityConfirmed === true, hypothetical: s.icf.enabled && s.icf.eligibilityConfirmed !== true };
   const products = enabledDiscounts.map((d) => ({ ...d, ...insuranceCost(d) }));
   const recurringInsuranceMonthly = sum(products.map((p) => p.recurring));
   const upfrontInsurance = sum(products.map((p) => p.upfront));
@@ -532,6 +549,8 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const loanMax = Math.min(60000, nonnegative(s.familyLoan.maxAmount));
   const transferForAmount = (amount) => calculateMotherTransfer({ ...s.motherTransfer, amount,
     ownershipShares: (s.tax.buyers || []).map((buyer) => buyer.share),
+    bankLoanRate: s.familyLoan.rate, bankLoanYears: s.familyLoan.years,
+    bankLoanTermsAssumed: s.familyLoan.assumedTerms,
   });
   const loanFeeForAmount = (amount) => amount > 0 ? amount * loanFeeRate + loanFeeFixed : 0;
   // Donation tax depends on the donated amount. Solve the minimum gross bank
@@ -575,6 +594,21 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const beforeMortgageGap = Math.max(0, beforeMortgageRequired - beforeMortgageAvailable);
   const insuranceFirstPaymentEstimate = sum(products.filter((p) => p.frequency !== 'upfront').map((p) => nonnegative(p.cost)))
     + (bankHome ? 0 : nonnegative(s.budget.externalHomeInsuranceAnnual));
+  const financing = {
+    purchasePrice: price, lendingBase,
+    bankMortgage: principal, bankShareOfPrice: principal / price,
+    icf: icfPrincipal, icfShareOfPrice: icfPrincipal / price,
+    totalPriceFunding: principal + icfPrincipal, uncoveredPurchasePrice: priceContribution,
+    icfHypothetical: icf.hypothetical,
+  };
+  const motherFundingNeed = {
+    uncoveredPurchasePrice: priceContribution, purchaseTax: tax.total, purchaseFees,
+    mortgageFees: mortgageOriginationFee, upfrontInsurance, renovations: cost.renovations,
+    purchaseReserve: cost.reserve, extraBuffer: familyExtraBuffer,
+    bankLoanFee: familyLoanFee, giftTax: motherTransfer.giftTax, giftNotaryCost: motherTransfer.notaryCost,
+    grossBeforeSavings: totalRequired, savingsUsed: Math.min(savings, totalRequired),
+    netAfterSavings: Math.max(0, totalRequired - savings), borrowed: familyPrincipal, fundingGap,
+  };
   const cash = {
     totalRequired, availableFunds, savings, fundingGap, surplus: Math.max(0, availableFunds - totalRequired),
     priceContribution, tax: tax.total, purchaseFees, mortgageOriginationFee, upfrontInsurance, familyLoanFee,
@@ -584,9 +618,14 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     purchasePrice: price, mortgageFunding: principal, icfFunding: icfPrincipal, debtFunding: familyPrincipal,
     totalAcquisitionCost: price + tax.total + purchaseFees + mortgageOriginationFee + upfrontInsurance + familyLoanFee + motherTransfer.totalCosts + cost.renovations,
     insuranceFirstPaymentEstimate,
+    priceFinancing: financing, motherFundingNeed,
+    potentialClosingSurplus: Math.max(0, -closingNetPayment),
+    fundingTimingRequiresConfirmation: s.icf.enabled || closingNetPayment < 0,
   };
   if (fundingGap > 0.01) warnings.push(`Faltan ${rounded(fundingGap).toFixed(2)} € para cubrir la compra y el colchón previsto.`);
   if (beforeMortgageGap > 0.01) warnings.push(`Antes de firmar la hipoteca faltan ${rounded(beforeMortgageGap).toFixed(2)} € para arras, tasación y asesoramiento.`);
+  if (s.icf.enabled && priceContribution > 0.01) warnings.push('El ICF estimado no cubre toda la aportación al precio por su límite o por la tasación. La parte no financiada sigue incluida en la necesidad de caja.');
+  if (closingNetPayment < 0) warnings.push('La liquidación de firma muestra un saldo teórico a favor. No presupone que el banco o el ICF reintegren las arras; confirma importes, destinatarios y fechas de desembolso antes de comprometerlas.');
   if (totalReserve === 0) warnings.push('No se ha reservado colchón de emergencia.');
   if (insuranceFirstPaymentEstimate > 0) warnings.push(`Las primas recurrentes se provisionan mensualmente. Confirma cuándo se cobran: una primera prima puede exigir hasta ${rounded(insuranceFirstPaymentEstimate).toFixed(2)} € adicionales de liquidez al inicio; no está sumada a los costes de adquisición.`);
   if (s.cash.depositPercent > 0 || depositAmount > 0) warnings.push('Las arras se descuentan del precio. Confirma financiación y condiciones de devolución antes de firmarlas.');
@@ -709,7 +748,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   };
   const timeline = [
     { id: 'before', label: 'Antes de la hipoteca', cashOut: beforeMortgageRequired, cashIn: beforeMortgageAvailable, balance: beforeMortgageAvailable - beforeMortgageRequired, note: 'Arras, tasación y asesoramiento; la hipoteca todavía no se desembolsa.' },
-    { id: 'signing', label: 'Firma', cashOut: price - depositAmount + closingCosts, cashIn: principal + icfPrincipal + (s.cash.familyLoanAvailableBeforeDeposit ? 0 : familyPrincipal), balance: savings + familyPrincipal - beforeMortgageRequired - closingNetPayment, note: 'El precio pendiente ya descuenta las arras. Fondos ICF sujetos a resolución y desembolso.' },
+    { id: 'signing', label: 'Firma', cashOut: price - depositAmount + closingCosts, cashIn: principal + icfPrincipal + (s.cash.familyLoanAvailableBeforeDeposit ? 0 : familyPrincipal), balance: savings + familyPrincipal - beforeMortgageRequired - closingNetPayment, note: 'El precio pendiente ya descuenta las arras. Liquidación teórica: fondos ICF, destinatarios y eventual devolución de anticipos sujetos a resolución y desembolsos confirmados.' },
     { id: 'after', label: 'Después de la firma', cashOut: cost.renovations, cashIn: 0, balance: availableFunds - totalRequired + totalReserve, note: 'Reformas y efectivo restante, que incluye la reserva de compra y el colchón adicional del préstamo.' },
     { id: 'monthly', label: 'Cada mes', cashOut: totalMonthly, cashIn: actualRegularIncome, balance: budget.remainingRegular, note: 'Primas anuales, IBI y mantenimiento se reparten entre 12 como provisión; sus fechas reales de cobro pueden variar.' },
     ...(icfPrincipal ? [{ id: 'icf', label: 'Después de pagar la hipoteca', cashOut: icf.deferredMonthlyPayment, cashIn: 0, balance: null, note: `ICF: devolución sin intereses durante ${icf.repaymentYears} años, según resolución y contrato.` }] : []),
@@ -727,5 +766,36 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     internalFamilyLoanInterest: motherTransfer.repayment?.totalInterest ?? (motherTransfer.termsKnown ? 0 : null),
     internalFamilyLoanExcludedFromConsolidatedDebt: true,
   };
-  return { valid: true, validation, warnings: [...new Set(warnings)], tax, mortgage, familyLoan, motherTransfer, icf, cash, budget, stress, bonuses, timeline, lifetime };
+  return { valid: true, validation, warnings: [...new Set(warnings)], tax, mortgage, familyLoan, motherTransfer, icf, financing, cash, budget, stress, bonuses, timeline, lifetime };
+}
+
+/** Explicit hypothetical comparison; never changes the saved scenario or
+ * silently enables ICF. Rates come from the entered bank loan, or 5% as a
+ * labelled assumption when unknown. Every alternative still needs approval.
+ */
+export function compareFamilyLoanTerms(input = {}, yearsOptions = [10, 15, 20]) {
+  if (!Array.isArray(yearsOptions)) return [];
+  const scenario = normalizeScenario(input);
+  const rate = n(scenario.familyLoan.rate, 5);
+  return yearsOptions.map((years) => {
+    const result = calculateScenario({ ...scenario, familyLoan: {
+      ...scenario.familyLoan, enabled: true, years, rate, assumedTerms: true,
+    } });
+    return {
+      years, rate, valid: result.valid, approvalRequired: true, termsAssumed: true,
+      principal: result.familyLoan?.principal ?? null,
+      monthlyPayment: result.familyLoan?.monthlyPayment ?? null,
+      totalInterest: result.familyLoan?.totalInterest ?? null,
+      totalPaid: result.familyLoan?.totalPaid ?? null,
+      familyMonthlyRepayment: result.motherTransfer?.familyMonthlyRepayment ?? null,
+      repaymentMode: scenario.motherTransfer.repaymentMode,
+      borrowerDebtRatio: result.budget?.debtRatio ?? null,
+      borrowerDebtRatioIncomplete: result.budget?.borrowerDebtRatioIncomplete ?? true,
+      familyDebtRatio: result.budget?.familyDebtRatio ?? null,
+      totalMonthly: result.budget?.totalMonthly ?? null,
+      remainingRegular: result.budget?.remainingRegular ?? null,
+      fundingGap: result.cash?.fundingGap ?? null,
+      errors: result.validation.errors, warnings: result.warnings, result,
+    };
+  });
 }

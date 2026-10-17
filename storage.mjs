@@ -72,15 +72,44 @@ function sortScenarios(scenarios) {
   return scenarios.sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
 }
 
+function normalizeSnapshot(rows) {
+  if (!Array.isArray(rows)) throw new Error('La lista de viviendas recibida no es válida.');
+  const ids = new Set();
+  return rows.map(row => {
+    if (!row || typeof row.id !== 'string' || !ID_PATTERN.test(row.id) || ids.has(row.id)) throw new Error('La lista de viviendas tiene identificadores no válidos o repetidos.');
+    ids.add(row.id);
+    return normalizeScenario(row);
+  });
+}
+
+/** Online family lists use the server snapshot, never a union with stale copies. */
+export function reconcileScenarioLists({ localScenarios = [], remoteScenarios = [], cloudConnected = false } = {}) {
+  return sortScenarios(normalizeSnapshot(cloudConnected ? remoteScenarios : localScenarios));
+}
+
+export class ScenarioConflictError extends Error {
+  constructor(scenarioId) {
+    super('Esta vivienda ha cambiado o se ha eliminado en otro dispositivo. Actualiza la lista antes de guardar; tu borrador se conserva.');
+    this.name = 'ScenarioConflictError';
+    this.code = 'SCENARIO_CONFLICT';
+    this.scenarioId = scenarioId;
+  }
+}
+
 /** All methods are synchronous. Pass a Storage-compatible object for tests. */
 export class LocalStore {
   constructor(storage = browserStorage()) { this.storage = storage; }
 
   get persistent() { return Boolean(this.storage); }
 
-  getScenarios() {
+  _readState() {
     const saved = read(this.storage, SCENARIOS_KEY, { version: 1, scenarios: [] });
     if (saved?.version !== 1 || !Array.isArray(saved.scenarios)) throw new Error('El formato de las viviendas guardadas no es compatible.');
+    return saved;
+  }
+
+  getScenarios() {
+    const saved = this._readState();
     return sortScenarios(saved.scenarios.map((scenario) => normalizeScenario(scenario)));
   }
 
@@ -88,13 +117,13 @@ export class LocalStore {
     const saved = normalizeScenario(scenario, { touch: true });
     const scenarios = this.getScenarios().filter((item) => item.id !== saved.id);
     scenarios.push(saved);
-    write(this.storage, SCENARIOS_KEY, { version: 1, scenarios: sortScenarios(scenarios) });
+    write(this.storage, SCENARIOS_KEY, { ...this._readState(), version: 1, scenarios: sortScenarios(scenarios) });
     return saved;
   }
 
   deleteScenario(scenarioId) {
     const scenarios = this.getScenarios().filter((item) => item.id !== scenarioId);
-    write(this.storage, SCENARIOS_KEY, { version: 1, scenarios });
+    write(this.storage, SCENARIOS_KEY, { ...this._readState(), version: 1, scenarios });
     return scenarios;
   }
 
@@ -117,8 +146,36 @@ export class LocalStore {
     const merged = new Map((replace ? [] : this.getScenarios()).map((scenario) => [scenario.id, scenario]));
     for (const scenario of imported) merged.set(scenario.id, scenario);
     const scenarios = sortScenarios([...merged.values()]);
-    write(this.storage, SCENARIOS_KEY, { version: 1, scenarios });
+    write(this.storage, SCENARIOS_KEY, { ...this._readState(), version: 1, scenarios });
     return { imported: imported.length, total: scenarios.length, scenarios };
+  }
+
+  /**
+   * Applies a COMPLETE successful server snapshot to this family's local cache.
+   * scope is the public project URL + household ID, never a token/invitation.
+   * knownIds may include previously observed family IDs during legacy migration.
+   * Other local homes survive. Drafts belong to the caller and are never touched.
+   * Previously observed IDs remain tracked so re-importing a stale copy cannot
+   * make it reappear after the next reconciliation. One atomic storage write.
+   */
+  reconcileCloud(remoteRows, { scope, knownIds = [] } = {}) {
+    if (typeof scope !== 'string' || !scope || scope.length > 500 || UNSAFE_KEYS.has(scope)) throw new Error('Falta el identificador de la familia para actualizar la copia local.');
+    if (!Array.isArray(knownIds) || knownIds.some(value => typeof value !== 'string' || !ID_PATTERN.test(value))) throw new Error('Los identificadores conocidos de la familia no son válidos.');
+    const remoteScenarios = sortScenarios(normalizeSnapshot(remoteRows));
+    const state = this._readState();
+    const cloudScopes = state.cloudScopes && typeof state.cloudScopes === 'object' && !Array.isArray(state.cloudScopes) ? state.cloudScopes : {};
+    const previousIds = Object.hasOwn(cloudScopes, scope) && Array.isArray(cloudScopes[scope]?.ids) ? cloudScopes[scope].ids : [];
+    const associated = new Set([...previousIds, ...knownIds, ...remoteScenarios.map(row => row.id)]);
+    const remoteIds = new Set(remoteScenarios.map(row => row.id));
+    const localRows = this.getScenarios();
+    const removedIds = localRows.filter(row => associated.has(row.id) && !remoteIds.has(row.id)).map(row => row.id);
+    const unrelated = localRows.filter(row => !associated.has(row.id));
+    const scenarios = sortScenarios([...unrelated, ...remoteScenarios]);
+    write(this.storage, SCENARIOS_KEY, {
+      ...state, version: 1, scenarios,
+      cloudScopes: { ...cloudScopes, [scope]: { ids: [...associated] } },
+    });
+    return { scenarios, remoteScenarios, removedIds };
   }
 }
 
@@ -176,6 +233,7 @@ export class CloudStore {
     this.householdId = null;
     this.inviteCode = null;
     this._refreshPromise = null;
+    this._scenarioVersions = new Map();
   }
 
   get connected() { return Boolean(this.session && this.userId); }
@@ -244,6 +302,7 @@ export class CloudStore {
   }
 
   _rememberHousehold(householdId, inviteCode = null) {
+    if (this.householdId !== householdId) this._scenarioVersions.clear();
     this.householdId = householdId;
     this.inviteCode = inviteCode;
     write(this.storage, this.householdKey, householdId ? { householdId, ...(inviteCode ? { inviteCode } : {}) } : null);
@@ -307,27 +366,64 @@ export class CloudStore {
 
   async list() {
     this._requireHousehold();
-    const rows = await this._request(`/rest/v1/scenarios?select=id,data,created_at,updated_at&household_id=eq.${encodeURIComponent(this.householdId)}&order=updated_at.desc`);
-    return (rows || []).map((row) => normalizeScenario({ ...row.data, id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }));
+    const collected = [];
+    for (let offset = 0; ; offset += 1000) {
+      const rows = await this._request(`/rest/v1/scenarios?select=id,data,created_at,updated_at&household_id=eq.${encodeURIComponent(this.householdId)}&order=updated_at.desc,id.asc&limit=1000&offset=${offset}`);
+      if (!Array.isArray(rows)) throw new Error('Supabase no ha devuelto una lista completa de viviendas válida.');
+      collected.push(...rows.map(row => {
+        if (!row || !row.data || typeof row.data !== 'object' || Array.isArray(row.data)
+          || typeof row.created_at !== 'string' || !Number.isFinite(Date.parse(row.created_at))
+          || typeof row.updated_at !== 'string' || !Number.isFinite(Date.parse(row.updated_at))) throw new Error('Supabase ha devuelto una vivienda con datos o fechas no válidos.');
+        return { ...row.data, id: row.id, createdAt: row.created_at, updatedAt: row.updated_at };
+      }));
+      if (rows.length < 1000) break;
+    }
+    const scenarios = normalizeSnapshot(collected);
+    const activeIds = new Set(scenarios.map(row => row.id));
+    for (const knownId of this._scenarioVersions.keys()) if (!activeIds.has(knownId)) this._scenarioVersions.set(knownId, null);
+    for (const row of scenarios) this._scenarioVersions.set(row.id, row.updatedAt);
+    return scenarios;
   }
 
-  async save(scenario) {
+  /**
+   * New: save(data,{create:true}) inserts once, without an upsert.
+   * Existing: pass the ORIGINAL server updatedAt captured before local saving.
+   * PATCH with a revision condition refuses stale updates and deleted records.
+   */
+  async save(scenario, { create, expectedUpdatedAt } = {}) {
     this._requireHousehold();
     const data = normalizeScenario(scenario, { touch: true });
-    const rows = await this._request('/rest/v1/scenarios?on_conflict=household_id,id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-      body: { household_id: this.householdId, id: data.id, data },
-    });
+    const knownRevision = this._scenarioVersions.get(data.id);
+    const isNew = create === undefined ? !this._scenarioVersions.has(data.id) && !scenario.updatedAt && !scenario.createdAt : create === true;
+    const revision = expectedUpdatedAt ?? knownRevision ?? scenario.updatedAt;
+    if (this._scenarioVersions.has(data.id) && knownRevision === null) throw new ScenarioConflictError(data.id);
+    if (!isNew && (typeof revision !== 'string' || !Number.isFinite(Date.parse(revision)))) throw new ScenarioConflictError(data.id);
+    let rows;
+    try {
+      rows = await this._request(isNew ? '/rest/v1/scenarios' : `/rest/v1/scenarios?household_id=eq.${encodeURIComponent(this.householdId)}&id=eq.${encodeURIComponent(data.id)}&updated_at=eq.${encodeURIComponent(revision)}`, {
+        method: isNew ? 'POST' : 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: isNew ? { household_id: this.householdId, id: data.id, data } : { data },
+      });
+    } catch (error) {
+      if (error.status === 409 || error.code === '23505') throw new ScenarioConflictError(data.id);
+      throw error;
+    }
     const row = rows?.[0];
-    if (!row) throw new Error('Supabase no ha confirmado que la vivienda se haya guardado.');
-    return normalizeScenario({ ...row.data, id: row.id, createdAt: row.created_at, updatedAt: row.updated_at });
+    if (!row) throw new ScenarioConflictError(data.id);
+    const saved = normalizeScenario({ ...row.data, id: row.id, createdAt: row.created_at, updatedAt: row.updated_at });
+    this._scenarioVersions.set(saved.id, saved.updatedAt);
+    return saved;
   }
 
-  async delete(scenarioId) {
+  async delete(scenarioId, { expectedUpdatedAt } = {}) {
     this._requireHousehold();
-    if (!ID_PATTERN.test(String(scenarioId))) throw new Error('El identificador de vivienda no es válido.');
-    await this._request(`/rest/v1/scenarios?household_id=eq.${encodeURIComponent(this.householdId)}&id=eq.${encodeURIComponent(scenarioId)}`, { method: 'DELETE' });
+    if (typeof scenarioId !== 'string' || !ID_PATTERN.test(scenarioId)) throw new Error('El identificador de vivienda no es válido.');
+    const revision = expectedUpdatedAt ?? this._scenarioVersions.get(scenarioId);
+    if (typeof revision !== 'string' || !Number.isFinite(Date.parse(revision))) throw new ScenarioConflictError(scenarioId);
+    const rows = await this._request(`/rest/v1/scenarios?household_id=eq.${encodeURIComponent(this.householdId)}&id=eq.${encodeURIComponent(scenarioId)}&updated_at=eq.${encodeURIComponent(revision)}`, { method: 'DELETE', headers: { Prefer: 'return=representation' } });
+    if (!Array.isArray(rows) || rows.length !== 1) throw new ScenarioConflictError(scenarioId);
+    this._scenarioVersions.set(scenarioId, null);
   }
 
   /** Stops this client; preserves the browser identity so reconnecting keeps access. */
@@ -336,5 +432,6 @@ export class CloudStore {
     this.userId = null;
     this.householdId = null;
     this.inviteCode = null;
+    this._scenarioVersions.clear();
   }
 }
