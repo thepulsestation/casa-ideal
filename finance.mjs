@@ -61,7 +61,9 @@ export const DEFAULT_SCENARIO = Object.freeze({
       { id: 'sister', monthly: 0, payments: 12 },
     ],
     existingDebtMonthly: 0, familyIncomeMonthly: 0, familyExistingDebtMonthly: 0,
-    utilitiesMonthly: 0, carMonthly: 0, foodMonthly: 0, otherMonthly: 0,
+    utilitiesMonthly: 0, carMonthly: 0, foodMonthly: 0, otherMonthly: 0, storageMonthly: 0,
+    sharedLivingCosts: true,
+    propertyCostsEstimated: false, propertyCostsConfirmed: false, ibiLiquidableBase: null, ibiRatePercent: null,
     utilityBreakdown: { waterMonthly: 0, energyMonthly: 0, internetMonthly: 0, otherMonthly: 0 },
     ibiAnnual: 0, wasteAnnual: 0, maintenanceAnnual: 0, communityMonthly: 0,
     externalHomeInsuranceAnnual: null, currentRent: 1014.35,
@@ -152,6 +154,22 @@ export function normalizeScenario(input = {}) {
     if (result.budget[modeKey] === undefined) {
       const hasDetail = UTILITY_KEYS.some((key) => nonnegative(result.budget[breakdownKey][key]) > 0);
       result.budget[modeKey] = hasDetail || nonnegative(result.budget[aggregateKey]) === 0 ? 'detailed' : 'aggregate';
+    }
+  }
+  if (!isRecord(input.budget) || input.budget.sharedLivingCosts === undefined) {
+    const effectiveUtility = (modeKey, aggregateKey, breakdownKey) => result.budget[modeKey] === 'aggregate'
+      ? nonnegative(result.budget[aggregateKey])
+      : sum(UTILITY_KEYS.map((key) => nonnegative(result.budget[breakdownKey][key])));
+    const futureUtility = effectiveUtility('utilitiesMode', 'utilitiesMonthly', 'utilityBreakdown');
+    const currentUtility = effectiveUtility('currentUtilitiesMode', 'currentUtilitiesMonthly', 'currentUtilityBreakdown');
+    // One set of living costs is the default for both new and saved scenarios.
+    // When the only known bills were entered as current bills, reuse them as
+    // the canonical shared inputs. The original current inputs stay intact.
+    result.budget.sharedLivingCosts = true;
+    if (futureUtility === 0 && currentUtility > 0) {
+      result.budget.utilitiesMode = result.budget.currentUtilitiesMode;
+      result.budget.utilitiesMonthly = result.budget.currentUtilitiesMonthly;
+      result.budget.utilityBreakdown = { ...result.budget.currentUtilityBreakdown };
     }
   }
   if (structureErrors.length) result._structureErrors = [...new Set(structureErrors)];
@@ -337,6 +355,12 @@ export function validateScenario(input = {}) {
   optionalBoolean(s.stress.loseDiscounts, 'Pérdida de bonificaciones');
   optionalBoolean(s.motherTransfer.giftPublicDeed, 'Escritura de donación');
   optionalBoolean(s.motherTransfer.coOwnerSpouseConfirmed, 'Excepción de copropiedad entre cónyuges');
+  optionalBoolean(s.budget.sharedLivingCosts, 'Gastos de vida compartidos entre alquiler y compra');
+  optionalBoolean(s.budget.propertyCostsEstimated, 'Importes orientativos de la casa');
+  optionalBoolean(s.budget.propertyCostsConfirmed, 'Recibos y cuotas de la casa comprobados');
+  if(s.budget.propertyCostsEstimated && s.budget.propertyCostsConfirmed)errors.push('Una provisión orientativa no puede figurar también como importe confirmado.');
+  numeric(s.budget.ibiLiquidableBase, 'Base liquidable del IBI', 0, Infinity, true);
+  numeric(s.budget.ibiRatePercent, 'Tipo municipal del IBI', 0, 100, true);
   numeric(s.purchasePrice, 'Precio de compra', 1);
   numeric(s.appraisalValue, 'Tasación', 0, Infinity, true);
   numeric(s.referenceValue, 'Valor de referencia', 0, Infinity, true);
@@ -417,7 +441,7 @@ export function validateScenario(input = {}) {
     if (n(s.mortgage.ltv) > 0.8) warnings.push('Revisa la compatibilidad del porcentaje bancario con ICF.');
     warnings.push('ICF incorpora obligaciones y protección oficial de la vivienda; consulta sus condiciones antes de comprometer arras.');
   }
-  const monthlyKeys = ['existingDebtMonthly', 'familyIncomeMonthly', 'familyExistingDebtMonthly', 'utilitiesMonthly', 'carMonthly', 'foodMonthly', 'otherMonthly', 'ibiAnnual', 'wasteAnnual', 'maintenanceAnnual', 'communityMonthly', 'externalHomeInsuranceAnnual', 'currentRent', 'currentUtilitiesMonthly', 'currentOtherMonthly'];
+  const monthlyKeys = ['existingDebtMonthly', 'familyIncomeMonthly', 'familyExistingDebtMonthly', 'utilitiesMonthly', 'carMonthly', 'foodMonthly', 'otherMonthly', 'storageMonthly', 'ibiAnnual', 'wasteAnnual', 'maintenanceAnnual', 'communityMonthly', 'externalHomeInsuranceAnnual', 'currentRent', 'currentUtilitiesMonthly', 'currentOtherMonthly'];
   for (const key of monthlyKeys) numeric(s.budget[key], `Presupuesto ${key}`, 0, Infinity, key === 'externalHomeInsuranceAnnual');
   numeric(s.budget.debtRatioLimit, 'Límite endeudamiento', 0.01, 1);
   if (!Array.isArray(s.budget.incomes)) errors.push('Los ingresos deben ser una lista.');
@@ -588,10 +612,14 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const utilityMode = s.budget.utilitiesMode;
   const currentUtilityMode = s.budget.currentUtilitiesMode;
   const utilitiesMonthly = utilityMode === 'aggregate' ? utilitiesUnitemizedMonthly : utilitiesDetailedMonthly;
-  const currentUtilitiesMonthly = currentUtilityMode === 'aggregate' ? currentUtilitiesUnitemizedMonthly : currentUtilitiesDetailedMonthly;
+  const currentUtilitiesIndependentMonthly = currentUtilityMode === 'aggregate' ? currentUtilitiesUnitemizedMonthly : currentUtilitiesDetailedMonthly;
+  const sharedLivingCosts = s.budget.sharedLivingCosts;
+  const currentUtilitiesMonthly = sharedLivingCosts ? utilitiesMonthly : currentUtilitiesIndependentMonthly;
   if (utilitiesUnitemizedMonthly > 0 && utilitiesDetailedMonthly > 0) warnings.push(`Se conservan un importe conjunto y un desglose de suministros futuros: solo se cuenta ${utilityMode === 'aggregate' ? 'el importe conjunto' : 'el desglose'}.`);
-  if (currentUtilitiesUnitemizedMonthly > 0 && currentUtilitiesDetailedMonthly > 0) warnings.push(`Se conservan un importe conjunto y un desglose de suministros actuales: solo se cuenta ${currentUtilityMode === 'aggregate' ? 'el importe conjunto' : 'el desglose'}.`);
-  const householdMonthly = nonnegative(s.budget.carMonthly) + nonnegative(s.budget.foodMonthly) + nonnegative(s.budget.otherMonthly);
+  if (currentUtilitiesUnitemizedMonthly > 0 && currentUtilitiesDetailedMonthly > 0 && !sharedLivingCosts) warnings.push(`Se conservan un importe conjunto y un desglose de suministros actuales: solo se cuenta ${currentUtilityMode === 'aggregate' ? 'el importe conjunto' : 'el desglose'}.`);
+  if (sharedLivingCosts && (currentUtilitiesUnitemizedMonthly > 0 || currentUtilitiesDetailedMonthly > 0) && Math.abs(currentUtilitiesIndependentMonthly - utilitiesMonthly) > 0.005) warnings.push('Se usan los mismos suministros en alquiler y compra. Los importes actuales anteriores, distintos, se conservan como referencia y no se suman.');
+  const storageMonthly = nonnegative(s.budget.storageMonthly);
+  const householdMonthly = nonnegative(s.budget.carMonthly) + nonnegative(s.budget.foodMonthly) + nonnegative(s.budget.otherMonthly) + storageMonthly;
   const knownFamilyPayment = nonnegative(familyLoan.monthlyPayment);
   const existingDebt = nonnegative(s.budget.existingDebtMonthly);
   const familyExistingDebt = nonnegative(s.budget.familyExistingDebtMonthly);
@@ -607,13 +635,14 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const currentComparable = currentRent + currentUtilitiesMonthly + existingDebt + familyExistingDebt + householdMonthly + nonnegative(s.budget.currentOtherMonthly);
   const missingEstimates = [
     ...(purchaseFees === 0 ? ['Gastos de compraventa y tasación'] : []),
-    ...(nonnegative(s.budget.ibiAnnual) === 0 ? ['IBI anual'] : []),
+    ...(!s.budget.propertyCostsConfirmed ? ['IBI, residuos y comunidad / conservación sin comprobar'] : []),
     ...(nonnegative(s.budget.maintenanceAnnual) === 0 ? ['Mantenimiento de la casa'] : []),
     ...(nonnegative(s.budget.foodMonthly) === 0 ? ['Alimentación'] : []),
     ...(utilitiesMonthly === 0 ? ['Suministros'] : []),
     ...(motherTransfer.costsIncomplete ? ['Notaría de la donación'] : []),
   ];
-  if (missingEstimates.length) warnings.push(`Hay partidas a cero pendientes de comprobar: ${missingEstimates.join(', ')}.`);
+  if (missingEstimates.length) warnings.push(`Hay partidas pendientes de completar o comprobar: ${missingEstimates.join(', ')}.`);
+  if(s.budget.propertyCostsEstimated)warnings.push('Se incluyen importes orientativos de IBI, residuos o comunidad: son una provisión de presupuesto, no un máximo. Sustitúyelos por los recibos y comprueba también posibles derramas.');
   const incomplete = !familyTermsKnown || !motherTransfer.termsKnown || motherTransfer.costsIncomplete || unquotedProducts.length > 0 || homeQuoteMissing || actualRegularIncome === 0 || missingEstimates.length > 0;
   const budget = {
     regularIncome, averagedIncome, familyIncomeMonthly: familyIncome,
@@ -624,6 +653,8 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     mortgageOnly, homeMonthly, propertyOverheadMonthly, annualHomeCostsMonthly,
     insuranceMonthly: recurringInsuranceMonthly + externalHomeMonthly,
     upfrontInsuranceMonthlyEquivalent, utilitiesMonthly, householdMonthly,
+    storageMonthly, sharedLivingCosts, currentUtilitiesIndependentMonthly,
+    propertyCostsEstimated:s.budget.propertyCostsEstimated, propertyCostsConfirmed:s.budget.propertyCostsConfirmed,
     utilityBreakdown, utilitiesUnitemizedMonthly, currentUtilitiesMonthly,
     currentUtilityBreakdown, currentUtilitiesUnitemizedMonthly,
     utilityMode, currentUtilityMode, utilitiesMode: utilityMode, currentUtilitiesMode: currentUtilityMode,
@@ -636,6 +667,8 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     motherBankLoanMonthly: familyLoan.monthlyPayment,
     motherNetExternalCostMonthly: familyTermsKnown && motherTransfer.termsKnown ? knownFamilyPayment - internalRepayment : null,
     remainingRegular: actualRegularIncome - totalMonthly, remainingAveraged: actualAveragedIncome - totalMonthly,
+    currentRemainingRegular: actualRegularIncome - currentComparable,
+    currentRemainingAveraged: actualAveragedIncome - currentComparable,
     debtRatio, familyDebtRatio, debtRatioLimit: n(s.budget.debtRatioLimit),
     maximumMortgageByRatio: Math.max(0, regularIncome * n(s.budget.debtRatioLimit) - existingDebt - internalRepayment),
     currentRent, currentComparable, comparisonToRent: homeMonthly - currentRent,

@@ -1,3 +1,4 @@
+import {renderPropertyCosts} from './property-costs.mjs?v=1';
 /** Family income and household expenses. Personal amounts live in the scenario. */
 export function renderBudget(s, result, { field, select, check, section, notice, row, euro, pct, resultSidebar }) {
   const b = result.budget;
@@ -59,24 +60,26 @@ export function renderBudget(s, result, { field, select, check, section, notice,
       </div>
       ${notice(`Esfuerzo de los titulares: <strong>${pct(b.debtRatio)}</strong>. Deudas frente a ingresos del hogar: <strong>${pct(b.familyDebtRatio)}</strong>. Son dos perspectivas distintas. La aprobación del banco depende de su análisis, incluida la financiación de la entrada.`, 'info')}
     `)}
-    ${section('Agua, electricidad/gas e internet', 'Presupuesta las facturas de la nueva casa para las cuatro personas.', utilities())}
-    ${section('El resto de la vida en casa', 'Introduce importes para todo el hogar. No se multiplican por cuatro.', `
+    ${section('Agua, electricidad/gas e internet', 'Un solo presupuesto para las cuatro personas. Por defecto se usa igual al alquilar y al comprar.', utilities())}
+    ${section('El resto de la vida en casa', 'Rellénalo una vez. Estos mismos gastos se suman tanto al alquiler como a la compra, para todo el hogar.', `
       <div class="form-grid">
-        ${field('Alimentación mensual · todo el hogar', 'budget.foodMonthly')}
-        ${field('Coche y transporte mensual · todo el hogar', 'budget.carMonthly')}
-        ${field('Comunidad / urbanización al mes', 'budget.communityMonthly', { hint: 'Una casa también puede tener comunidad o cuotas de conservación.' })}
-        ${field('Otros gastos de vida al mes', 'budget.otherMonthly', { hint: 'Salud, ocio, educación, suscripciones…' })}
-        ${field('IBI anual', 'budget.ibiAnnual')}
-        ${field('Tasa de residuos anual', 'budget.wasteAnnual')}
-        ${field('Mantenimiento y reparaciones / año', 'budget.maintenanceAnnual', { hint: 'Una provisión para tejado, caldera, jardín, etc.' })}
+        ${field('Alimentación mensual · todo el hogar','budget.foodMonthly')}
+        ${field('Coche y transporte mensual · todo el hogar','budget.carMonthly')}
+        ${field('Trastero al mes','budget.storageMonthly',{hint:'Se mantiene igual en los dos presupuestos. No lo repitas en alquiler ni en otros gastos.'})}
+        ${field('Otros gastos de vida al mes','budget.otherMonthly',{hint:'Salud, ocio, educación, suscripciones… Sin repetir el trastero.'})}
       </div>
-      <p class="fine-print">IBI, residuos, mantenimiento y seguros anuales se dividen entre 12 para reservar dinero. Eso no cambia el día de cobro de los recibos.</p>
     `)}
-    ${section('Comparar con vuestra vida actual', 'Incluye hoy y mañana los mismos conceptos, para las mismas cuatro personas.', `
-      <div class="form-grid">${field('Alquiler mensual actual', 'budget.currentRent')}
-        ${field('Otros gastos actuales de vivienda / mes', 'budget.currentOtherMonthly', { hint: 'Solo conceptos que aún no estén en alimentación, coche u otras deudas.' })}
-      </div><div class="section-gap">${utilities(true)}</div>
-      <div class="purchase-strip"><div><small>Gasto familiar actual introducido</small><strong>${euro(b.currentComparable)}</strong></div><div><small>Gasto familiar tras comprar</small><strong>${euro(b.totalMonthly)}</strong></div></div>
+    ${section('Los gastos propios de la casa que compraríais','IBI, residuos y comunidad o conservación. Usa recibos cuando los tengas; mientras tanto puedes probar una provisión.',renderPropertyCosts(s,result,{field,check,notice,row,euro}))}
+    ${section('Alquilar o comprar, con el mismo presupuesto','No tienes que volver a rellenar agua, luz, internet, comida, transporte ni trastero.',`
+      <div class="form-grid">${field('Alquiler mensual actual','budget.currentRent')}
+        ${field('Otros gastos exclusivos de la vivienda actual / mes','budget.currentOtherMonthly',{hint:'Si pagas residuos, comunidad o IBI aparte del alquiler, introduce su equivalente mensual aquí. Agua, luz, internet, alimentación, transporte y trastero ya están incluidos.'})}
+      </div>
+      ${notice(b.sharedLivingCosts?'Se utilizan exactamente los mismos suministros y gastos de vida en ambos casos. La diferencia viene de alquiler frente a hipoteca, préstamo de mamá y gastos propios de la compra.':'Los gastos de vida y el trastero se mantienen iguales. Has activado suministros distintos en las opciones de abajo.','info')}
+      <div class="purchase-strip"><div><small>Alquiler + vida + deudas actuales</small><strong>${euro(b.currentComparable,2)}</strong></div><div><small>Compra + vida + deudas</small><strong>${euro(b.totalMonthly,2)}</strong></div></div>
+      <details class="section-gap"><summary>Opcional: usar suministros diferentes después de comprar</summary>
+       ${check('Mantener los mismos suministros al alquilar y al comprar','budget.sharedLivingCosts','Activado por defecto. Desmárcalo solo si quieres comparar facturas diferentes.')}
+       ${!b.sharedLivingCosts?`<div class="section-gap">${utilities(true)}</div>`:b.currentUtilitiesIndependentMonthly>0?`<p class="fine-print">Importe actual anterior conservado: ${euro(b.currentUtilitiesIndependentMonthly,2)} /mes. Es una referencia; se usa el presupuesto común y no se suma dos veces.</p>`:''}
+      </details>
     `)}
     ${section('Si un mes no va según lo previsto', 'Una prueba de resistencia del hogar completo, también editable.', `
       <div class="form-grid">

@@ -20,7 +20,7 @@ function boot({hash='#resumen',draft=null,joined=false,scenarios=[],signupGate=n
  view.insertAdjacentHTML=(_position,value)=>{html=value+html;};
  const location={get href(){return url.href},get hash(){return url.hash},set hash(value){url.hash=value},get pathname(){return url.pathname},get search(){return url.search}};
  const optional=['mother-transfer-section','price-range','quick-price','cloud-form','join-family-form','family-code'];
- globalThis.document={querySelector(selector){const id=selector.slice(1);if(optional.includes(id)&&!html.includes('id="'+id+'"'))return null;return node(id);},querySelectorAll(selector){if(selector==='[data-action]')return [...html.matchAll(/data-action="([^"]+)"/g)].map(match=>({...node('action-'+match[1]),dataset:{action:match[1]}}));return [];}};
+ globalThis.document={querySelector(selector){const id=selector.slice(1);if(optional.includes(id)&&!html.includes('id="'+id+'"'))return null;return node(id);},querySelectorAll(selector){if(selector==='#view [data-field]')return [...html.matchAll(/<(?:input|select)[^>]*data-field="([^"]+)"[^>]*>/g)].map(match=>{const field=node('field-'+match[1]);field.dataset={field:match[1],scale:match[0].match(/data-scale="([^"]+)"/)?.[1]};field.type=match[0].match(/type="([^"]+)"/)?.[1]||'select';field.value=match[0].match(/value="([^"]*)"/)?.[1]||'';field.checked=/\schecked(?:\s|>)/.test(match[0]);return field;});if(selector==='[data-action]')return [...html.matchAll(/data-action="([^"]+)"/g)].map(match=>({...node('action-'+match[1]),dataset:{action:match[1]}}));return [];}};
  globalThis.window={addEventListener(type,fn){windowEvents.set(type,fn)},scrollTo(){},print(){}};
  globalThis.location=location;globalThis.history={replaceState(_state,_title,next){url=new URL(next,url)}};
  Object.defineProperty(globalThis,'localStorage',{value:memory,writable:true,configurable:true});
@@ -114,4 +114,38 @@ test('manual project connection waits for restoration and remains the active pro
  assert.equal(JSON.parse(memory.getItem('costes-vivienda.supabase.v1')).url,'https://another-test.supabase.co');
  assert.equal(app.node('cloud-url').value,'https://another-test.supabase.co');
  assert.equal(app.requests.at(-1).origin,'https://another-test.supabase.co');
+});
+
+
+test('applying the property provision changes only its three costs and marks them unconfirmed',async()=>{
+ const draft=normalizeScenario({id:'local-house',budget:{foodMonthly:450,storageMonthly:65,utilityBreakdown:{waterMonthly:30},ibiAnnual:800,wasteAnnual:120,communityMonthly:20,propertyCostsConfirmed:true}});
+ const app=boot({hash:'#presupuesto',draft});await app.loading;
+ await app.node('action-apply-property-provision').handlers.click();
+ const b=app.draft().budget;
+ assert.equal(b.ibiAnnual,1500);assert.equal(b.wasteAnnual,300);assert.equal(b.communityMonthly,100);
+ assert.equal(b.foodMonthly,450);assert.equal(b.storageMonthly,65);assert.equal(b.utilityBreakdown.waterMonthly,30);
+ assert.equal(b.propertyCostsEstimated,true);assert.equal(b.propertyCostsConfirmed,false);
+});
+test('the IBI assistant preserves waste, community, and living costs',async()=>{
+ const draft=normalizeScenario({id:'local-house',budget:{ibiLiquidableBase:100000,ibiRatePercent:.7,wasteAnnual:240,communityMonthly:40,storageMonthly:65}});
+ const app=boot({hash:'#presupuesto',draft});await app.loading;
+ await app.node('action-apply-ibi-estimate').handlers.click();
+ const b=app.draft().budget;
+ assert.equal(b.ibiAnnual,700);assert.equal(b.wasteAnnual,240);assert.equal(b.communityMonthly,40);assert.equal(b.storageMonthly,65);
+ assert.equal(b.propertyCostsEstimated,true);assert.equal(b.propertyCostsConfirmed,false);
+});
+
+
+test('enabling common bills reuses known current bills if the future budget was empty',async()=>{
+ const draft=normalizeScenario({budget:{sharedLivingCosts:false,utilitiesMonthly:0,currentUtilitiesMonthly:190}});
+ const app=boot({hash:'#presupuesto',draft});await app.loading;
+ const field=app.node('field-budget.sharedLivingCosts');field.checked=true;field.handlers.change({target:field});
+ const b=app.draft().budget;
+ assert.equal(b.sharedLivingCosts,true);assert.equal(b.utilitiesMonthly,190);assert.equal(b.currentUtilitiesMonthly,190);
+});
+test('a budget with property provisions is approximate rather than a promised minimum or maximum margin',async()=>{
+ const draft=normalizeScenario({budget:{incomes:[{monthly:4000,payments:12}],propertyCostsEstimated:true,ibiAnnual:1500,wasteAnnual:300,communityMonthly:100}});
+ const app=boot({draft});await app.loading;
+ assert.ok(app.html.includes('≈ '));assert.ok(app.html.includes('Presupuesto orientativo con provisiones'));
+ assert.ok(!app.html.includes('mínimo conocido'));assert.ok(!app.html.includes('Margen máximo provisional'));
 });

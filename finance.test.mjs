@@ -329,7 +329,9 @@ test('legacy aggregate utility imports retain their exact cost and are not copie
   assert.equal(s.budget.householdIncomes[0].monthly, 0);
   const r = calculateScenario(s);
   assert.equal(r.budget.utilitiesMonthly, 275);
-  assert.equal(r.budget.currentUtilitiesMonthly, 180);
+  assert.equal(r.budget.currentUtilitiesMonthly, 275);
+  assert.equal(r.budget.currentUtilitiesIndependentMonthly, 180);
+  assert.equal(s.budget.currentUtilitiesMonthly, 180);
   assert.equal(r.budget.actualRegularIncome, 600);
   assert.equal(r.budget.householdRegularIncome, 0);
   const roundTrip = calculateScenario(JSON.parse(JSON.stringify(s)));
@@ -340,6 +342,7 @@ test('legacy aggregate utility imports retain their exact cost and are not copie
 
 test('exclusive utility modes switch without summing or losing the inactive reference', () => {
   const aggregate = normalizeScenario({ budget: {
+    sharedLivingCosts: false,
     utilitiesMonthly: 275, utilitiesMode: 'aggregate',
     utilityBreakdown: { waterMonthly: 35, energyMonthly: 110, internetMonthly: 40, otherMonthly: 10 },
     currentUtilitiesMonthly: 180, currentUtilitiesMode: 'detailed',
@@ -396,4 +399,109 @@ test('fixed household roles are normalized by identity with complete zero defaul
   assert.equal(positional.budget.householdIncomes[1].monthly, 850);
   assert.equal(calculateScenario({ budget: { householdIncomes: [{ id: 'unknown', monthly: 9000 }] } }).valid, false);
   assert.equal(calculateScenario({ budget: { householdIncomes: [{ id: 'mother', monthly: 10 }, { id: 'mother', monthly: 20 }] } }).valid, false);
+});
+
+test('one shared set of living costs cancels from the purchase versus rent difference', () => {
+  const first = calculateScenario({ budget: { sharedLivingCosts: true, utilitiesMonthly: 200, foodMonthly: 400, carMonthly: 100, otherMonthly: 50 } });
+  const second = calculateScenario({ budget: { sharedLivingCosts: true, utilitiesMonthly: 350, foodMonthly: 600, carMonthly: 180, otherMonthly: 50 } });
+  assert.equal(first.budget.currentUtilitiesMonthly, 200);
+  assert.equal(second.budget.currentUtilitiesMonthly, 350);
+  close(second.budget.allInDifference, first.budget.allInDifference);
+  close(second.budget.totalMonthly - first.budget.totalMonthly, 430);
+  close(second.budget.currentComparable - first.budget.currentComparable, 430);
+});
+
+test('storage is one living expense in each home and is never mortgage debt', () => {
+  const common = { budget: { sharedLivingCosts: true, incomes: [{ monthly: 4000, payments: 12 }], utilitiesMonthly: 200, foodMonthly: 400 } };
+  const first = calculateScenario(common);
+  const second = calculateScenario({ ...common, budget: { ...common.budget, storageMonthly: 50 } });
+  assert.equal(second.budget.storageMonthly, 50);
+  close(second.budget.householdMonthly - first.budget.householdMonthly, 50);
+  close(second.budget.totalMonthly - first.budget.totalMonthly, 50);
+  close(second.budget.currentComparable - first.budget.currentComparable, 50);
+  close(second.budget.remainingRegular - first.budget.remainingRegular, -50);
+  close(second.budget.currentRemainingRegular - first.budget.currentRemainingRegular, -50);
+  close(second.budget.remainingAveraged - first.budget.remainingAveraged, -50);
+  close(second.budget.currentRemainingAveraged - first.budget.currentRemainingAveraged, -50);
+  close(second.budget.allInDifference, first.budget.allInDifference);
+  assert.equal(second.budget.debtRatio, first.budget.debtRatio);
+  assert.equal(second.budget.familyDebtRatio, first.budget.familyDebtRatio);
+  assert.equal(second.budget.totalDebtMonthly, first.budget.totalDebtMonthly);
+  close(second.stress.totalMonthly - first.stress.totalMonthly, 55);
+});
+
+test('shared-cost migration uses common bills while preserving distinct legacy references', () => {
+  const legacy = normalizeScenario({ budget: { utilitiesMonthly: 270, currentUtilitiesMonthly: 190 } });
+  assert.equal(legacy.budget.sharedLivingCosts, true);
+  const previous = calculateScenario(legacy);
+  assert.equal(previous.budget.currentUtilitiesMonthly, 270);
+  assert.equal(previous.budget.currentUtilitiesIndependentMonthly, 190);
+  const shared = normalizeScenario({ ...legacy, budget: { ...legacy.budget, sharedLivingCosts: true } });
+  const same = calculateScenario(shared);
+  assert.equal(shared.budget.currentUtilitiesMonthly, 190);
+  assert.equal(same.budget.currentUtilitiesIndependentMonthly, 190);
+  assert.equal(same.budget.currentUtilitiesMonthly, 270);
+  assert.equal(same.budget.sharedLivingCosts, true);
+  assert.ok(same.warnings.some((warning) => warning.includes('actuales anteriores, distintos')));
+  const restored = calculateScenario({ ...shared, budget: { ...shared.budget, sharedLivingCosts: false } });
+  assert.equal(restored.budget.currentUtilitiesMonthly, 190);
+  assert.equal(calculateScenario(JSON.parse(JSON.stringify(legacy))).budget.sharedLivingCosts, true);
+  assert.equal(calculateScenario(JSON.parse(JSON.stringify({ ...legacy, budget: { ...legacy.budget, sharedLivingCosts: false } }))).budget.sharedLivingCosts, false);
+  assert.equal(normalizeScenario({ budget: { utilitiesMonthly: 270 } }).budget.sharedLivingCosts, true);
+  assert.equal(normalizeScenario({ budget: { utilitiesMonthly: 270, currentUtilitiesMonthly: 270 } }).budget.sharedLivingCosts, true);
+  assert.equal(normalizeScenario().budget.sharedLivingCosts, true);
+  assert.equal(DEFAULT_SCENARIO.budget.sharedLivingCosts, true);
+});
+
+test('shared-cost migration compares the active detailed bills, not discarded aggregates', () => {
+  const legacy = normalizeScenario({ budget: {
+    utilitiesMonthly: 900, utilityBreakdown: { waterMonthly: 40, energyMonthly: 110 },
+    currentUtilitiesMonthly: 900, currentUtilityBreakdown: { waterMonthly: 30, energyMonthly: 90 },
+  } });
+  assert.equal(legacy.budget.sharedLivingCosts, true);
+  assert.equal(calculateScenario(legacy).budget.currentUtilitiesMonthly, 150);
+  assert.equal(calculateScenario(legacy).budget.currentUtilitiesIndependentMonthly, 120);
+  assert.equal(calculateScenario({ ...legacy, budget: { ...legacy.budget, sharedLivingCosts: false } }).budget.currentUtilitiesMonthly, 120);
+  for (const budget of [{ storageMonthly: -1 }, { sharedLivingCosts: 'true' }, { sharedLivingCosts: null }]) {
+    assert.equal(calculateScenario({ budget }).valid, false);
+  }
+});
+
+test('legacy current-only utility inputs become canonical shared costs without losing the original', () => {
+  for (const budget of [
+    { currentUtilitiesMonthly: 180 },
+    { currentUtilityBreakdown: { waterMonthly: 30, energyMonthly: 90, internetMonthly: 30 } },
+  ]) {
+    const before = JSON.stringify(budget);
+    const normalized = normalizeScenario({ budget });
+    const r = calculateScenario(normalized);
+    const amount = budget.currentUtilitiesMonthly || 150;
+    assert.equal(normalized.budget.sharedLivingCosts, true);
+    assert.equal(r.budget.utilitiesMonthly, amount);
+    assert.equal(r.budget.currentUtilitiesMonthly, amount);
+    assert.equal(r.budget.currentUtilitiesIndependentMonthly, amount);
+    assert.equal(normalized.budget.utilitiesMode, normalized.budget.currentUtilitiesMode);
+    assert.deepEqual(normalized.budget.utilityBreakdown, normalized.budget.currentUtilityBreakdown);
+    assert.equal(normalized.budget.utilitiesMonthly, normalized.budget.currentUtilitiesMonthly);
+    assert.equal(JSON.stringify(budget), before);
+    const again = calculateScenario(JSON.parse(JSON.stringify(normalized)));
+    assert.equal(again.budget.utilitiesMonthly, amount);
+  }
+  const independent = calculateScenario({ budget: { sharedLivingCosts: false, currentUtilitiesMonthly: 180 } });
+  assert.equal(independent.budget.utilitiesMonthly, 0);
+  assert.equal(independent.budget.currentUtilitiesMonthly, 180);
+});
+
+
+test('property provisions count once but never imply that municipal and community costs are verified',()=>{
+ const base=calculateScenario({budget:{ibiAnnual:0,wasteAnnual:0,communityMonthly:0}});
+ const planned=calculateScenario({budget:{ibiAnnual:1500,wasteAnnual:300,communityMonthly:100,propertyCostsEstimated:true}});
+ close(planned.budget.totalMonthly-base.budget.totalMonthly,250);
+ assert.equal(planned.budget.incomplete,true);
+ assert.equal(planned.budget.propertyCostsConfirmed,false);
+ assert.ok(planned.budget.missingEstimates.some(x=>x.includes('sin comprobar')));
+ assert.ok(planned.warnings.some(x=>x.includes('no un máximo')));
+ const checked=calculateScenario({budget:{ibiAnnual:0,wasteAnnual:0,communityMonthly:0,propertyCostsConfirmed:true}});
+ assert.ok(!checked.budget.missingEstimates.some(x=>x.includes('sin comprobar')));
+ for(const budget of [{propertyCostsEstimated:'yes'},{propertyCostsConfirmed:null},{ibiLiquidableBase:-1},{ibiRatePercent:101},{propertyCostsEstimated:true,propertyCostsConfirmed:true}])assert.equal(calculateScenario({budget}).valid,false);
 });
