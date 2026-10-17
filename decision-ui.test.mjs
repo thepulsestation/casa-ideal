@@ -96,12 +96,15 @@ test('a fitting debt ratio still presents unconfirmed deposit funding as pending
  assert.ok(html.includes('Máxima devolución mensual a mamá'));
 });
 
-test('deposit choices expose the conservative cash requirement instead of assuming released arras',()=>{
+test('lower-funding comparison explains the ICF reduction without claiming it is an official arras rule',()=>{
  const s=adoptPurchaseProvision(planningScenario()),r=calculateScenario(s);
  const html=renderDepositFunding(s,r,ui);
  assert.equal(r.familyLoan.principal,17500);
  assert.ok(html.includes('34250'),'the extra liquidity must be visible before treating the purchase as funded');
- assert.ok(html.includes('No deis por cerrado el dinero inicial'));
+ assert.ok(html.includes('de 35000 a 17500'));
+ assert.ok(html.includes('no una regla acreditada del ICF'));
+ assert.ok(html.includes('solo hipótesis'));
+ assert.ok(html.includes('Si la compra se cancela'));
  assert.ok(html.includes('value="no-release"'));
 });
 

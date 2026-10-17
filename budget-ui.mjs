@@ -1,4 +1,4 @@
-import {renderPropertyCosts} from './property-costs.mjs?v=13';
+import {renderPropertyCosts} from './property-costs.mjs?v=14';
 /** Family income and household expenses. Personal amounts live in the scenario. */
 export function renderBudget(s, result, { field, select, check, section, notice, row, euro, pct, resultSidebar, global = false }) {
   const b = result.budget;

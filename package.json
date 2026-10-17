@@ -5,6 +5,6 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test finance.test.mjs storage.test.mjs family-access.test.mjs app.test.mjs property-costs.test.mjs budget-ui.test.mjs housing.test.mjs housing-ui.test.mjs financing-ui.test.mjs gallery.test.mjs commute.test.mjs property-analysis.test.mjs decision-ui.test.mjs family-profile.test.mjs purchase-ui.test.mjs"
+    "test": "node --test finance.test.mjs storage.test.mjs family-access.test.mjs app.test.mjs property-costs.test.mjs budget-ui.test.mjs housing.test.mjs housing-ui.test.mjs financing-ui.test.mjs gallery.test.mjs commute.test.mjs property-analysis.test.mjs decision-ui.test.mjs family-profile.test.mjs purchase-ui.test.mjs format.test.mjs"
   }
 }
