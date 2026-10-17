@@ -191,3 +191,11 @@ test('opening edit during restoration uses the restored housing rather than the 
  const opening=app.node('save-btn').handlers.click();release();await app.loading;await opening;
  assert.equal(app.node('save-name').value,'Casa de prueba');assert.equal(app.node('save-price').value,250000);
 });
+
+
+test('a fresh device with several family homes reuses the latest family budget when adding',async()=>{
+ const app=boot({hash:'',joined:true,scenarios:[shared('first-home'),shared('second-home')]});await app.loading;
+ await app.node('add-home-btn').handlers.click();app.node('save-name').value='Tercera vivienda';app.node('save-price').value='170000';
+ await app.node('save-form').handlers.submit({preventDefault(){}});
+ assert.deepEqual(app.draft().budget.incomes,[{monthly:2100,payments:12},{monthly:1700,payments:14}]);
+});
