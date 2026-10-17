@@ -13,3 +13,5 @@
 [hidden]{display:none!important}
 
 .form-layout>div,.form-layout>aside{min-width:0}.property-top{gap:12px;flex-wrap:wrap}.property-top>div{min-width:0}.property-top h2,.housing-card h2{overflow-wrap:anywhere}.rental-comparison .table-wrap{max-width:100%;overflow-x:auto}@media(max-width:650px){.price-row{flex-wrap:wrap;gap:14px}}
+
+.housing-notes{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
