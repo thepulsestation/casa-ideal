@@ -183,6 +183,22 @@ test('connecting creates an anonymous identity but never uploads local scenarios
   await assert.rejects(() => cloud.list(), /Crea una familia/);
 });
 
+test('native-style fetch receives the global receiver instead of the CloudStore instance', async () => {
+  const backend = mockSupabase();
+  let calls = 0;
+  const nativeStyleFetch = function (...args) {
+    assert.equal(this, globalThis, 'Window.fetch requires its Window/global receiver');
+    calls++;
+    return backend.fetch(...args);
+  };
+  const cloud = new CloudStore(PUBLIC_URL, PUBLIC_KEY, { storage: backend.storage, fetch: nativeStyleFetch });
+  await cloud.connect();
+  await cloud.createHousehold('Familia');
+  const saved = await cloud.save({ name: 'Casa' });
+  assert.equal((await cloud.list())[0].id, saved.id);
+  assert.equal(calls, 5);
+});
+
 test('remote CRUD preserves scenario IDs and uses metadata confirmed by the server', async () => {
   const { cloud, state } = mockSupabase();
   await cloud.connect();
@@ -201,13 +217,18 @@ test('remote CRUD preserves scenario IDs and uses metadata confirmed by the serv
 });
 
 test('private invitations allow joining, while a rejected code leaves the context unchanged', async () => {
-  const { cloud } = mockSupabase();
+  const { cloud, storage, fetch } = mockSupabase();
   await cloud.connect();
   await assert.rejects(() => cloud.joinHousehold('invalid-code'), /invitación no válido/);
   assert.equal(cloud.householdId, null);
   assert.deepEqual(await cloud.joinHousehold(INVITE_CODE.toUpperCase()), { householdId: HOUSEHOLD_ID });
+  assert.equal(cloud.inviteCode, INVITE_CODE);
+  const reconnected = new CloudStore(PUBLIC_URL, PUBLIC_KEY, { storage, fetch });
+  await reconnected.connect();
+  assert.equal(reconnected.inviteCode, INVITE_CODE, 'a joining member can recover the code after a reload');
   await assert.rejects(() => cloud.joinHousehold('wrong-again'), /invitación no válido/);
   assert.equal(cloud.householdId, HOUSEHOLD_ID);
+  assert.equal(cloud.inviteCode, INVITE_CODE, 'a rejected invitation cannot replace the saved valid code');
 });
 
 test('a page reload reuses its identity and privately remembered family invitation', async () => {

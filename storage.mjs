@@ -183,11 +183,13 @@ export class CloudStore {
   async _fetch(path, { method = 'GET', body, headers = {}, token } = {}) {
     let response;
     try {
-      response = await this.fetchImpl(`${this.url}${path}`, {
+      // Browser Window.fetch requires the global Window as its receiver.
+      // Calling this.fetchImpl(...) would instead bind the CloudStore instance.
+      response = await Reflect.apply(this.fetchImpl, globalThis, [`${this.url}${path}`, {
         method,
         headers: { apikey: this.anonKey, ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      });
+      }]);
     } catch {
       throw new Error('No se puede conectar con Supabase. Comprueba la conexión y la URL del proyecto; tus viviendas locales siguen disponibles.');
     }
@@ -290,11 +292,12 @@ export class CloudStore {
   }
 
   async joinHousehold(code) {
-    const result = await this._request('/rest/v1/rpc/join_household', { method: 'POST', body: { p_invite_code: String(code || '').trim().toLowerCase() } });
+    const normalizedCode = String(code || '').trim().toLowerCase();
+    const result = await this._request('/rest/v1/rpc/join_household', { method: 'POST', body: { p_invite_code: normalizedCode } });
     const household = Array.isArray(result) ? result[0] : result;
     const householdId = household?.household_id;
     if (!householdId) throw new Error('Supabase no ha devuelto una familia válida.');
-    this._rememberHousehold(householdId);
+    this._rememberHousehold(householdId, normalizedCode);
     return { householdId };
   }
 
