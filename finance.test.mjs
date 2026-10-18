@@ -14,6 +14,94 @@ const youngBuyers = [
   { label: 'B', share: 0.5, rate: 0.05, eligibilityConfirmed: true },
 ];
 
+const vatHome = (purchaseCosts = {}) => normalizeScenario({
+  purchasePrice: 175000, icf: { enabled: true },
+  cash: { depositAmount: 3000, familyLoanAvailableBeforeDeposit: true, depositFundingMode: 'offset-confirmed' },
+  familyLoan: { enabled: true, rate: 12, years: 8 },
+  purchaseCosts: { mode: 'itemized', ...purchaseCosts },
+});
+
+test('a net appraisal adds VAT once to early cash and the automatic family loan', () => {
+  const base = calculateScenario(vatHome({ appraisal: 500 }));
+  const gross = calculateScenario(vatHome({ appraisal: 500, vat: { appraisal: { mode: 'net', rate: 21 } } }));
+  assert.equal(gross.valid, true);
+  assert.equal(gross.cash.purchaseFees, 605);
+  assert.equal(gross.cash.prepaidPurchaseFees, 605);
+  assert.equal(gross.cash.purchaseFeesVatAdded, 105);
+  close(gross.familyLoan.principal - base.familyLoan.principal, 105);
+  close(gross.cash.beforeMortgageRequired - base.cash.beforeMortgageRequired, 105);
+  close(gross.cash.closingNetPayment, base.cash.closingNetPayment);
+});
+
+test('existing final prices and mixed provisions do not receive a blanket VAT charge', () => {
+  const final = calculateScenario(vatHome({ appraisal: 605, moving: 600 }));
+  assert.equal(final.cash.purchaseFees, 605);
+  assert.equal(final.cash.moving, 600);
+  assert.equal(final.cash.serviceVatAdded, 0);
+  const provision = calculateScenario(vatHome({ mode: 'provision', appraisal: 500, vat: { appraisal: { mode: 'net' } } }));
+  assert.equal(provision.cash.purchaseFees, 5000);
+  assert.equal(provision.cash.purchaseFeesVatAdded, 0);
+  assert.equal(provision.cash.serviceVatAdded, 0);
+  assert.equal(provision.cash.purchaseFeesItemized, 605);
+});
+
+test('a net signing fee includes its VAT at signing and in required borrowing', () => {
+  const before = calculateScenario(vatHome({ notary: 1000 }));
+  const after = calculateScenario(vatHome({ notary: 1000, vat: { notary: { mode: 'net', rate: 21 } } }));
+  close(after.cash.closingNetPayment - before.cash.closingNetPayment, 210);
+  close(after.familyLoan.principal - before.familyLoan.principal, 210);
+  close(after.cash.beforeMortgageRequired, before.cash.beforeMortgageRequired);
+});
+
+test('included disbursements are part of the quote and do not receive a second VAT charge', () => {
+  const r = calculateScenario(vatHome({ notary: 1000, vat: { notary: { mode: 'net', rate: 21, untaxed: 200 } } }));
+  assert.equal(r.cash.costVat.notary.taxableBase, 800);
+  assert.equal(r.cash.costVat.notary.vatAdded, 168);
+  assert.equal(r.cash.purchaseFees, 1168);
+});
+
+test('renovation and moving quote VAT is funded once and paid after signing', () => {
+  const r = calculateScenario(vatHome({
+    renovations: 1000, moving: 600,
+    vat: { renovations: { mode: 'net', rate: 10 }, moving: { mode: 'net', rate: 21 } },
+  }));
+  assert.equal(r.cash.renovations, 1100);
+  assert.equal(r.cash.moving, 726);
+  assert.equal(r.cash.serviceVatAdded, 226);
+  assert.equal(r.cash.purchaseFees, 0);
+  assert.equal(r.timeline.find(t => t.id === 'after').cashOut, 1826);
+  close(r.familyLoan.principal, 17500 + 3000 + 1826);
+  assert.equal(r.tax.vat, 0);
+});
+
+test('exempt quotes, reserves, taxes, and other mixed expenses get no automatic VAT', () => {
+  const r = calculateScenario(vatHome({ broker: 1000, other: 300, reserve: 200, vat: { broker: { mode: 'net', rate: 0 } } }));
+  assert.equal(r.cash.purchaseFees, 1300);
+  assert.equal(r.cash.reserve, 200);
+  assert.equal(r.cash.purchaseFeesVatAdded, 0);
+  assert.equal(r.tax.total, 17500);
+});
+
+test('quote VAT respects the family loan cap and exposes the funding shortfall', () => {
+  const s = vatHome({ legal: 40000, vat: { legal: { mode: 'net', rate: 21 } } });
+  const r = calculateScenario(s);
+  assert.equal(r.familyLoan.principal, 60000);
+  assert.equal(r.cash.fundingGap, 17500 + 48400 + 3000 - 60000);
+});
+
+test('invalid quote VAT structures, modes, rates and disbursements cannot silently become valid', () => {
+  for (const vat of [[], { appraisal: [] }, { appraisal: { mode: 'wrong' } },
+    { appraisal: { rate: -1 } }, { appraisal: { rate: 99 } },
+    { appraisal: { mode: 'net', untaxed: 501 } }]) {
+    const s = vatHome({ appraisal: 500, vat });
+    assert.equal(calculateScenario(normalizeScenario(s)).valid, false);
+  }
+  const s = vatHome({ appraisal: 500 });
+  const normalized = normalizeScenario(s);
+  normalized.purchaseCosts.vat.appraisal.rate = 10;
+  assert.equal(s.purchaseCosts.vat.appraisal.rate, 21);
+});
+
 test('French amortization matches bank illustration and reconciles principal', () => {
   close(monthlyPayment(200000, 2.7, 30), 811.1964);
   close(monthlyPayment(200000, 3.7, 30), 920.56597);

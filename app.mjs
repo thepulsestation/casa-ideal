@@ -1,22 +1,22 @@
-import {adoptPreclosingPlan,renderAppraisalFunding,renderPreclosing} from './preclosing-ui.mjs?v=15';
-import {euro,num} from './format.mjs?v=15';
-import {createHousingScenario, updateHousingDetails, getHousingDetails} from './housing.mjs?v=15';
-import {renderHousingList, renderHousingComparison, renderRentalComparison, renderPropertyGallery, hasBudgetEstimates} from './housing-ui.mjs?v=15';
-import {initGallery} from './gallery.mjs?v=15';
-import {prepareHousingPresentation,needsListingEnrichment,renderPropertyFacts,renderCommutes,validateCommute,resetCommuteMeasurements,getCommuteIndicators} from './commute.mjs?v=15';
-import {PROPERTY_COST_PROVISION, estimateAnnualIbi} from './property-costs.mjs?v=15';
-import {buildFamilyLink, buildFamilyHash, parseFamilyRoute, selectInitialFamilyScenario} from './family-access.mjs?v=15';
-import {adoptFamilyFinancingPlan, adoptDiscountBreakdown, renderFinancingBreakdown, renderFamilyLoanTerms, renderBorrowerDebt, renderMortgageRateExample} from './financing-ui.mjs?v=15';
-import {renderBudget} from './budget-ui.mjs?v=15';
-import {adoptPurchaseProvision,renderPropertyContext,renderDecisionSummary,renderDebtDecision,renderDepositFunding} from './decision-ui.mjs?v=15';
-import {FAMILY_PROFILE_ID,isFamilyProfile,isFamilyField,extractFamilyProfile,applyFamilyProfile} from './family-profile.mjs?v=15';
-import {renderPropertyCosts} from './property-costs.mjs?v=15';
+import {adoptPreclosingPlan,renderAppraisalFunding,renderPreclosing} from './preclosing-ui.mjs?v=17';
+import {euro,num} from './format.mjs?v=17';
+import {createHousingScenario, updateHousingDetails, getHousingDetails} from './housing.mjs?v=17';
+import {renderHousingList, renderHousingComparison, renderRentalComparison, renderPropertyGallery, hasBudgetEstimates} from './housing-ui.mjs?v=17';
+import {initGallery} from './gallery.mjs?v=17';
+import {prepareHousingPresentation,needsListingEnrichment,renderPropertyFacts,renderCommutes,validateCommute,resetCommuteMeasurements,getCommuteIndicators} from './commute.mjs?v=17';
+import {PROPERTY_COST_PROVISION, estimateAnnualIbi} from './property-costs.mjs?v=17';
+import {buildFamilyLink, buildFamilyHash, parseFamilyRoute, selectInitialFamilyScenario} from './family-access.mjs?v=17';
+import {adoptFamilyFinancingPlan, adoptDiscountBreakdown, renderFinancingBreakdown, renderFamilyLoanTerms, renderBorrowerDebt, renderMortgageRateExample} from './financing-ui.mjs?v=17';
+import {renderBudget} from './budget-ui.mjs?v=17';
+import {adoptPurchaseProvision,renderPropertyContext,renderDecisionSummary,renderDebtDecision,renderDepositFunding} from './decision-ui.mjs?v=17';
+import {FAMILY_PROFILE_ID,isFamilyProfile,isFamilyField,extractFamilyProfile,applyFamilyProfile} from './family-profile.mjs?v=17';
+import {renderPropertyCosts} from './property-costs.mjs?v=17';
 import {CLOUD_CONFIG} from './config.mjs';
-import {renderPurchaseFees,renderDepositInputs,renderPurchaseTimeline,setDepositInputMode} from './purchase-ui.mjs?v=15';
-import {renderMotherTransfer} from './transfer-ui.mjs?v=15';
-import {DEFAULT_SCENARIO, normalizeScenario as normalizeFinanceScenario, calculateScenario, amortizeLoan} from './finance.mjs?v=15';
+import {renderPurchaseFees,renderDepositInputs,renderPurchaseTimeline,setDepositInputMode,renderQuotedCost} from './purchase-ui.mjs?v=17';
+import {renderMotherTransfer} from './transfer-ui.mjs?v=17';
+import {DEFAULT_SCENARIO, normalizeScenario as normalizeFinanceScenario, calculateScenario, amortizeLoan} from './finance.mjs?v=17';
 import {localStore, CloudStore, getCloudConfig, setCloudConfig, reconcileScenarioLists} from './storage.mjs?v=3';
-import {SOURCES, TAX_NOTES, QUESTIONS_FOR_BANK} from './sources.mjs?v=15';
+import {SOURCES, TAX_NOTES, QUESTIONS_FOR_BANK} from './sources.mjs?v=17';
 
 if(!getCloudConfig())setCloudConfig(CLOUD_CONFIG);
 const $=(s)=>document.querySelector(s);
@@ -24,7 +24,7 @@ const gallery=initGallery($('#photo-dialog'));
 const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pct=(n)=>n==null?'—':new Intl.NumberFormat('es-ES',{style:'percent',maximumFractionDigits:1}).format(n);
 const copy=(v)=>structuredClone(v);
-const APP_VERSION='16';
+const APP_VERSION='17';
 const normalizeScenario=(input={})=>adoptPreclosingPlan(adoptPurchaseProvision(prepareHousingPresentation(adoptDiscountBreakdown(adoptFamilyFinancingPlan(normalizeFinanceScenario(input))))));
 const draftKey='casa-ideal.draft.v1';
 const draftMetaKey='casa-ideal.draft-meta.v1';
@@ -126,7 +126,7 @@ function resultSidebar(){if(!result.valid)return '';return `<aside class="side-s
 function summary(){return renderDecisionSummary(s,result,{euro,pct,esc,renderPropertyGallery,renderPropertyFacts,renderRentalComparison,notice,renderPreclosing,field});}
 function purchaseDetails(){const r=result;return `<div class="grid form-layout"><div>${section('La vivienda','Empezamos por lo que veis en el anuncio.',`<div class="form-grid">${field('Nombre de la vivienda','name',{type:'text',suffix:''})}${field('Enlace del anuncio','url',{type:'url',suffix:''})}${select('Tipo de vivienda','propertyType',[['house','Casa'],['flat','Piso (comunidad editable)']])}${field('Valor de referencia catastral','referenceValue',{nullable:true,hint:'No es la tasación. Puede aumentar la base del impuesto.'})}${select('Tipo de compra','tax.mode',[['used','Segunda mano · ITP'],['new','Obra nueva · IVA + AJD']])}${field('Ahorros disponibles','cash.savings')}</div>`)}
 ${section('Impuestos: uno por cada comprador','El 5 % no depende solo de la edad. Cada titular debe cumplir sus requisitos.',s.tax.mode==='used'?`<div class="form-grid">${s.tax.buyers.map((buyer,i)=>`<div class="full" style="padding-top:${i?'18':'0'}px;${i?'border-top:1px solid var(--line)':''}"><h3>Comprador ${i+1}</h3></div>${field('Nombre o referencia del titular',`tax.buyers.${i}.label`,{type:'text',suffix:''})}${field('Participación en propiedad',`tax.buyers.${i}.share`,{suffix:'%',scale:100,max:100})}${select('Tipo solicitado',`tax.buyers.${i}.rate`,[[.1,'General · escala 10–13 %'],[.05,'Joven · 5 %']])}<div class="full">${check('Requisitos del tipo reducido comprobados',`tax.buyers.${i}.eligibilityConfirmed`,'Solo tras revisar edad, vivienda habitual y base general + base del ahorro − mínimo personal y familiar de la última renta aplicable (hasta 36.000 €). Marcarlo permite aplicar el 5 % solicitado a este titular; no verifica los requisitos por ti.')}</div>`).join('')}</div><div class="table-wrap"><table><thead><tr><th>Titular</th><th class="number">Parte adquirida</th><th class="number">Tipo aplicado</th><th class="number">ITP</th></tr></thead><tbody>${r.tax.buyers.map((b,i)=>`<tr><td>${esc(b.label||'Comprador '+(i+1))}</td><td class="number">${euro(b.taxableShare)}</td><td class="number">${pct(b.appliedRate)}</td><td class="number">${euro(b.amount,2)}</td></tr>`).join('')}</tbody></table></div>${notice(`ITP calculado: <strong>${euro(r.tax.total)}</strong> sobre ${euro(r.tax.base)}. Si pides el 5 % y no confirmas los requisitos, se mantiene el tipo general.`,'info')}`:`<div class="form-grid">${field('IVA','tax.vatRate',{suffix:'%',scale:100,max:100})}${field('AJD de compraventa','tax.ajdRate',{suffix:'%',scale:100,max:100,hint:'General 1,5 %. Pon 0 solo si la bonificación está verificada para toda la adquisición.'})}</div>${notice('La bonificación juvenil del AJD no elimina el IVA. Si solo un comprador cumple requisitos, introduce el tipo de AJD efectivo ponderado y confirma el reparto con la gestoría.')}`)}
-${section('Reformas y reservas opcionales','Los gastos de compraventa se ajustan arriba, en la provisión o por concepto.',`<div class="form-grid">${field('Reformas y acondicionamiento','purchaseCosts.renovations',{hint:'Si no vais a reformar ahora, deja 0 €.'})}${field('Otro colchón que queréis conservar','purchaseCosts.reserve',{hint:'Adicional al colchón de 3.000 € del préstamo de mamá. Déjalo a 0 si no queréis reservar otro.'})}</div>`)}
+${section('Reformas y reservas opcionales','Si no vais a reformar ahora, deja 0 €. Los gastos de compraventa se ajustan arriba.',`<div class="form-grid">${renderQuotedCost(s,'renovations','Reformas y acondicionamiento',{field,select,euro},r)}${field('Otro colchón que queréis conservar','purchaseCosts.reserve',{hint:'Adicional al colchón de 3.000 € del préstamo de mamá. Déjalo a 0 si no queréis reservar otro.'})}</div>`)}
 ${section('Arras y calendario del dinero','Arras y gastos previos son conceptos separados.',renderDepositInputs(s,{field,check})+renderPurchaseTimeline(r,{euro,esc}))}
 </div>${resultSidebar()}</div>`}
 function mortgageDetails(){const r=result;return `<div class="grid form-layout"><div>${renderFinancingBreakdown(s,r,{euro,pct,notice,row})}${section('Hipoteca Sabadell','Condiciones verbales editables. La FEIN será el documento definitivo.',`<div class="form-grid">${field('Financiación bancaria','mortgage.ltv',{suffix:'%',scale:100,max:100,hint:'80 % ordinario del menor entre compra y tasación.'})}${field('Plazo','mortgage.years',{suffix:'años',max:30,step:1})}${field('TIN sin bonificaciones','mortgage.baseRate',{suffix:'%',max:30})}${field('Bonificación máxima','mortgage.maxDiscountPoints',{suffix:'puntos',max:10})}${field('Comisión apertura','mortgage.originationFeePercent',{suffix:'%',max:100})}${field('Otros gastos bancarios iniciales','mortgage.originationFeeFixed')}</div>${notice(`<strong>${euro(r.mortgage.principal)} de capital → ${euro(r.mortgage.monthlyPayment,2)} al mes.</strong> TIN resultante ${num(r.mortgage.rate)} %. En la conversación: ejemplo 3,70 % base y 2,70 % con la bonificación máxima. No es una oferta aprobada.`,'info')}${renderMortgageRateExample(s,r,{euro})}`)}
@@ -138,7 +138,7 @@ ${section('Préstamo ICF para la entrada','Se combina con la hipoteca del 80 %. 
 </div>${resultSidebar()}</div>`}
 function purchase(){return `<div class="purchase-workspace">
 ${section('Precio, tasación y financiación','El valor de tasación y el coste de contratar la tasación son conceptos distintos.',renderAppraisalFunding(s,result,{field,euro}))}
-${section('Un margen para los gastos de compra','Estimación del gestor: 3.000–5.000 €, aparte de impuestos. Usamos 5.000 € como provisión editable.',renderPurchaseFees(s,result,{field,select,euro})+`<div class="form-grid section-gap">${field('Mudanza · gasto único estimado','purchaseCosts.moving',{hint:'600 € como referencia indicada por vosotros. Se añade aparte de la provisión general y del colchón; no se vuelve a pagar cada mes.'})}</div>`)}
+${section('Un margen para los gastos de compra','Estimación verbal del gestor: 3.000–5.000 €, aparte de impuestos. Los 5.000 € se prevén como total final; falta confirmar si cubren IVA y todos los conceptos.',renderPurchaseFees(s,result,{field,select,euro})+`<div class="form-grid section-gap">${renderQuotedCost(s,'moving','Mudanza · gasto único estimado',{field,select,euro},result)}</div><p class="fine-print">600 € como referencia indicada por vosotros. La mudanza se añade aparte de la provisión y del colchón; se paga una sola vez. Confirma si el presupuesto lleva IVA incluido.</p>`)}
 ${section('Arras y financiación efectiva','El adelanto debe encajar con el desembolso de Sabadell e ICF.',renderDepositFunding(s,result,{euro,esc}))}
 ${renderPreclosing(s,result,{field,euro})}
 ${renderDebtDecision(s,result,{euro,pct,esc})}

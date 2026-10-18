@@ -4,6 +4,24 @@ export const SOURCES_REVIEWED_AT = '2026-10-18';
 
 export const SOURCES = [
   {
+    id: 'aeat-iva-servicios',
+    title: 'AEAT · IVA de servicios y presupuestos',
+    url: 'https://www3.agenciatributaria.gob.es/Sede/iva/calculo-iva-repercutido-clientes/tipos-impositivos-iva.html',
+    summary: 'El tipo general es el 21 %. La calculadora conserva los importes antiguos como precios finales y solo añade IVA cuando se introduce expresamente un presupuesto sin IVA, al tipo de su factura. La provisión de 3.000–5.000 € es orientativa: falta confirmar con el gestor si cubre IVA y todos los servicios; no se multiplica entera por el 21 %.',
+  },
+  {
+    id: 'aeat-iva-suplidos',
+    title: 'AEAT · Base imponible y suplidos',
+    url: 'https://www3.agenciatributaria.gob.es/Sede/iva/calculo-iva-repercutido-clientes/calculo-base-imponible.html',
+    summary: 'Los suplidos que cumplan los requisitos se excluyen de la base del IVA del intermediario. Al introducir un presupuesto sin IVA, esa parte ya forma parte del importe y no recibe un segundo recargo.',
+  },
+  {
+    id: 'dgt-iva-intermediacion',
+    title: 'DGT · Exención de intermediación financiera',
+    url: 'https://petete.tributos.hacienda.gob.es/consultas/?num_consulta=V0079-25',
+    summary: 'La intermediación financiera que reúna los requisitos puede estar exenta. Un bróker debe confirmar qué servicio factura y su tributación: no toda asesoría o tramitación administrativa es intermediación exenta.',
+  },
+  {
     id: 'navas-2026',
     title: 'Navàs · Ordenanzas fiscales de 2026',
     url: 'https://www.navas.cat/wp-content/uploads/2026/03/OOFF20260324-.pdf',

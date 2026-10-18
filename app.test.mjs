@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeScenario } from './finance.mjs';
+import { normalizeScenario, calculateScenario } from './finance.mjs';
 import { buildFamilyHash } from './family-access.mjs';
 
 const CODE = 'cd34'.repeat(12);
@@ -513,6 +513,25 @@ test('purchase fee mode reveals its inputs and fixed arras are wired to the calc
  assert.equal(app.draft().cash.depositAmount,5000);
  depositMode.value='percent';await app.node('deposit-input-mode').handlers.change({target:depositMode});
  assert.equal(app.draft().cash.depositAmount,null);
+});
+
+test('a net service quote recalculates its final price and persists VAT for the family',async()=>{
+ const house=savedHome('vat-house');house.purchaseCosts.mode='itemized';
+ const app=boot({joined:true,hash:'#compra',scenarios:[house]});await app.loading;
+ for(const [path,value] of [['purchaseCosts.appraisal','500'],['purchaseCosts.vat.appraisal.mode','net']]){
+  const field=app.node('field-'+path);field.value=value;await field.handlers.change({target:field});
+ }
+ assert.ok(app.html.includes('IVA añadido: 105,00'));
+ assert.ok(app.html.includes('Total a pagar: 605,00'));
+ await app.flushTimers();
+ const saved=app.server.get('vat-house').data;
+ assert.equal(saved.purchaseCosts.appraisal,500);
+ assert.equal(saved.purchaseCosts.vat.appraisal.mode,'net');
+ assert.equal(calculateScenario(saved).cash.prepaidPurchaseFees,605);
+ const mode=app.node('field-purchaseCosts.vat.appraisal.mode');mode.value='total';await mode.handlers.change({target:mode});
+ const total=app.node('field-purchaseCosts.appraisal');total.value='605';await total.handlers.change({target:total});
+ await app.flushTimers();
+ assert.equal(calculateScenario(app.server.get('vat-house').data).cash.purchaseFees,605);
 });
 
 

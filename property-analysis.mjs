@@ -1,4 +1,4 @@
-import {getCommuteIndicators as defaultCommuteIndicators} from './commute.mjs?v=15';
+import {getCommuteIndicators as defaultCommuteIndicators} from './commute.mjs?v=17';
 
 export const HOUSING_SORT_OPTIONS=Object.freeze([
  ['favorites','Favoritas, después coste mensual'],

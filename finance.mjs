@@ -1,4 +1,4 @@
-import {calculatePreclosing} from './preclosing.mjs?v=15';
+import {calculatePreclosing} from './preclosing.mjs?v=17';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -48,7 +48,7 @@ export const DEFAULT_SCENARIO = Object.freeze({
   purchaseCosts: {
     mode: 'itemized', provisionAmount: 5000, provisionBeforeSigning: 0,
     appraisal: 0, legal: 0, notary: 0, registry: 0, agency: 0,
-    broker: 0, other: 0, renovations: 0, moving: 0, reserve: 0,
+    broker: 0, other: 0, renovations: 0, moving: 0, reserve: 0, vat: {},
   },
   familyLoan: { enabled: false, amount: null, maxAmount: 60000, rate: null, years: null, extraBuffer: 3000, assumedTerms: false, coverEarlyLiquidity: false, originationFeePercent: 0, originationFeeFixed: 0 },
   motherTransfer: {
@@ -80,6 +80,7 @@ export const DEFAULT_SCENARIO = Object.freeze({
 });
 
 const COST_KEYS = ['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker', 'other', 'renovations', 'moving', 'reserve'];
+const VAT_COST_KEYS = ['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker', 'renovations', 'moving'];
 const UTILITY_KEYS = ['waterMonthly', 'energyMonthly', 'internetMonthly', 'otherMonthly'];
 const FREQUENCIES = new Set(['monthly', 'quarterly', 'annual', 'upfront']);
 const isNumericPrimitive = (value) => (typeof value === 'number' || typeof value === 'string') && !(typeof value === 'string' && value.trim() === '');
@@ -108,6 +109,21 @@ export function normalizeScenario(input = {}) {
     if (provided && !isRecord(input[key])) structureErrors.push(`El apartado ${key} debe ser un objeto válido.`);
     result[key] = { ...base[key], ...(provided && isRecord(input[key]) ? input[key] : {}) };
   }
+  // Saved amounts have always meant final prices. Only an explicit net quote
+  // adds VAT; neither a mixed provision nor an old scenario gets a blanket tax.
+  let costVat = result.purchaseCosts.vat;
+  if (!isRecord(costVat)) {
+    structureErrors.push('El IVA de los presupuestos debe ser un objeto válido.');
+    costVat = {};
+  }
+  result.purchaseCosts.vat = Object.fromEntries(VAT_COST_KEYS.map((key) => {
+    let quote = costVat[key];
+    if (quote !== undefined && !isRecord(quote)) {
+      structureErrors.push(`El IVA del presupuesto ${key} debe ser un objeto válido.`);
+      quote = {};
+    }
+    return [key, { mode: 'total', rate: 21, untaxed: 0, ...quote }];
+  }));
   for (const [section, key, label] of [
     ['tax', 'buyers', 'Los compradores'],
     ['mortgage', 'discounts', 'Las bonificaciones'],
@@ -401,6 +417,12 @@ export function validateScenario(input = {}) {
   if (s.mortgage.amount != null) numeric(s.mortgage.amount, 'Capital hipotecario', 0, nonnegative(s.purchasePrice));
   if (n(s.mortgage.ltv) > 0.8) warnings.push('La financiación supera el 80% citado por el gestor: requiere otra aprobación expresa de Sabadell.');
   for (const key of COST_KEYS) numeric(s.purchaseCosts[key], `Gasto ${key}`);
+  for (const key of VAT_COST_KEYS) {
+    const quote = s.purchaseCosts.vat[key];
+    if (!['total', 'net'].includes(quote.mode)) errors.push(`Selecciona importe final o sin IVA para ${key}.`);
+    numeric(quote.rate, `Tipo de IVA ${key}`, 0, 25);
+    numeric(quote.untaxed, `Parte sin recargo de IVA ${key}`, 0, quote.mode === 'net' ? nonnegative(s.purchaseCosts[key]) : Infinity);
+  }
   if (!['itemized', 'provision'].includes(s.purchaseCosts.mode)) errors.push('Selecciona gastos de compra desglosados o provisión general.');
   numeric(s.purchaseCosts.provisionAmount, 'Provisión general de gastos de compra');
   numeric(s.purchaseCosts.provisionBeforeSigning, 'Parte de la provisión anterior a la firma', 0, nonnegative(s.purchaseCosts.provisionAmount));
@@ -560,10 +582,21 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   if (homeQuoteMissing) warnings.push('Falta presupuesto del seguro de daños/hogar externo; la prima no está incluida.');
   if (bankHome && nonnegative(s.budget.externalHomeInsuranceAnnual)) warnings.push('Se ha elegido hogar Sabadell: no se suma también el seguro de hogar externo.');
   const cost = Object.fromEntries(COST_KEYS.map((key) => [key, nonnegative(s.purchaseCosts[key])]));
+  const costVat = Object.fromEntries(VAT_COST_KEYS.map((key) => {
+    const quote = s.purchaseCosts.vat[key];
+    const inputAmount = cost[key];
+    const untaxed = nonnegative(quote.untaxed);
+    const taxableBase = quote.mode === 'net' ? Math.max(0, inputAmount - untaxed) : 0;
+    const vatAdded = quote.mode === 'net' ? rounded(taxableBase * nonnegative(quote.rate) / 100) : 0;
+    const total = inputAmount + vatAdded;
+    cost[key] = total;
+    return [key, { inputAmount, mode: quote.mode, rate: nonnegative(quote.rate), untaxed, taxableBase, vatAdded, total }];
+  }));
   const mortgageOriginationFee = principal * nonnegative(s.mortgage.originationFeePercent) / 100 + nonnegative(s.mortgage.originationFeeFixed);
   const purchaseFeesItemized = sum(['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker', 'other'].map((key) => cost[key]));
   const purchaseFeesMode = s.purchaseCosts.mode;
   const purchaseFeesEstimated = purchaseFeesMode === 'provision';
+  const purchaseFeesVatAdded = purchaseFeesEstimated ? 0 : sum(['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker'].map((key) => costVat[key].vatAdded));
   const purchaseFeesProvision = nonnegative(s.purchaseCosts.provisionAmount);
   const purchaseFees = purchaseFeesEstimated ? purchaseFeesProvision : purchaseFeesItemized;
   const prepaidPurchaseFees = purchaseFeesEstimated ? nonnegative(s.purchaseCosts.provisionBeforeSigning) : cost.appraisal + cost.legal;
@@ -651,6 +684,8 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     totalRequired, availableFunds, savings, fundingGap, surplus: Math.max(0, availableFunds - totalRequired),
     priceContribution, tax: tax.total, purchaseFees, mortgageOriginationFee, upfrontInsurance, familyLoanFee,
     purchaseFeesMode, purchaseFeesEstimated, purchaseFeesItemized, purchaseFeesProvision, prepaidPurchaseFees,
+    costVat, purchaseFeesVatAdded,
+    serviceVatAdded: purchaseFeesVatAdded + costVat.renovations.vatAdded + costVat.moving.vatAdded,
     motherTransferTax: motherTransfer.giftTax, motherTransferCosts: motherTransfer.totalCosts, giftNotaryCost: motherTransfer.notaryCost,
     renovations: cost.renovations, moving: cost.moving, reserve: cost.reserve, familyExtraBuffer, totalReserve, depositAmount,
     beforeMortgageRequired, beforeMortgageAvailable, beforeMortgageGap, closingNetPayment,
@@ -670,7 +705,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   if (depositFundingMode === 'no-release' && nominalDepositReleaseAtRisk > 0.01) warnings.push('Hipótesis de menor financiación: se mantiene primero la hipoteca y se reduce el ICF hasta el saldo pendiente al vendedor. Es una decisión del simulador, no una regla acreditada del ICF ni una consecuencia automática de pagar arras. No representa su pérdida. Confirma los capitales realmente concedidos.');
   if (s.familyLoan.coverEarlyLiquidity && !s.cash.familyLoanAvailableBeforeDeposit) warnings.push('El préstamo no está marcado como disponible antes de las arras: no se usa para cubrir esa fase y la falta de liquidez sigue visible.');
   if (earlyLiquidityExtraBorrowing > 0.01) warnings.push('El préstamo automático incorpora liquidez adicional para anticipar las arras. No es un gasto de compra adicional ni garantiza recuperar ese anticipo: hay que confirmar la liquidación y los desembolsos de banco e ICF.');
-  if (purchaseFeesEstimated) warnings.push('Se usan gastos de compra orientativos en lugar del desglose: la provisión no es un máximo ni incluye impuestos, reformas, reservas o seguros. Confirma presupuestos y qué parte debe pagarse antes de firmar.');
+  if (purchaseFeesEstimated) warnings.push('Se usan gastos de compra orientativos como importe final previsto: falta confirmar si la estimación del gestor cubre IVA y todos los servicios. La provisión no es un máximo ni incluye ITP/IVA de la vivienda, reformas, reservas o seguros. Confirma presupuestos y qué parte debe pagarse antes de firmar.');
   if (purchaseFeesEstimated && purchaseFeesItemized > 0) warnings.push('Se conserva el desglose de gastos de compra como referencia, pero solo se suma la provisión general seleccionada.');
   if (s.icf.enabled && priceContribution > 0.01) warnings.push('El ICF estimado no cubre toda la aportación al precio por su límite o por la tasación. La parte no financiada sigue incluida en la necesidad de caja.');
   if (closingNetPayment < 0) warnings.push('La liquidación de firma muestra un saldo teórico a favor. No presupone que el banco o el ICF reintegren las arras; confirma importes, destinatarios y fechas de desembolso antes de comprometerlas.');
