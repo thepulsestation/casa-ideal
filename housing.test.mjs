@@ -133,18 +133,18 @@ test('bank conditions and personal tax profiles remain, while manual principal a
   assert.equal(fresh.tax.ajdRate, 0.015, 'an old property AJD exemption must not silently apply to the new property');
 });
 
-test('a new scenario has explicit bank and same-as-bank family hypotheses while retaining custom references', () => {
+test('a new scenario has explicit bank hypotheses while retaining independent family terms', () => {
   const fresh = createHousingScenario(existing(), details());
   for (const [key, expected] of Object.entries({ enabled: true, amount: null, rate: 5, years: 10, assumedTerms: true, extraBuffer: 3000, maxAmount: 60000 })) assert.equal(fresh.familyLoan[key], expected);
   assert.equal(fresh.motherTransfer.familyYears, 12);
   assert.equal(fresh.motherTransfer.familyRate, 0);
   assert.equal(fresh.familyLoan.coverEarlyLiquidity, true);
-  assert.equal(fresh.motherTransfer.repaymentMode, 'same-as-bank');
+  assert.equal(fresh.motherTransfer.repaymentMode, 'custom');
   assert.equal(fresh.financingPlanVersion, 2);
   assert.equal(fresh.motherTransfer.giftNotaryCost, 0);
   const withoutCalendar = createHousingScenario({}, details());
   assert.equal(withoutCalendar.motherTransfer.familyYears, null);
-  assert.equal(calculateScenario(withoutCalendar).motherTransfer.effectiveFamilyYears, 10);
+  assert.equal(calculateScenario(withoutCalendar).motherTransfer.effectiveFamilyYears, null,'an unknown independent family term is not replaced with the bank term');
 });
 
 test('new properties explore 80% mortgage plus ICF without changing saved disabled plans or claiming eligibility', () => {
@@ -158,7 +158,9 @@ test('new properties explore 80% mortgage plus ICF without changing saved disabl
   assert.equal(fresh.icf.eligibilityConfirmed, false);
   assert.equal(fresh.icf.ltv, 0.2);
   assert.equal(fresh.icf.maxAmount, 50000);
-  assert.equal(fresh.motherTransfer.repaymentMode, 'same-as-bank');
+  assert.equal(fresh.motherTransfer.repaymentMode, 'custom');
+  assert.equal(fresh.motherTransfer.familyRate, 0);
+  assert.equal(fresh.motherTransfer.familyYears, 12);
   const r = calculateScenario(fresh);
   assert.equal(r.financing.bankMortgage, 160000);
   assert.equal(r.financing.icf, 40000);
@@ -168,6 +170,27 @@ test('new properties explore 80% mortgage plus ICF without changing saved disabl
   assert.equal(normalizeScenario(saved).icf.enabled, false);
   assert.equal(calculateScenario(saved).icf.enabled, false);
   assert.equal(updateHousingDetails(saved, { name: 'Plan guardado', purchasePrice: 200000 }).icf.enabled, false);
+});
+
+test('new property retains the supplied bank reference and an independent zero-interest family loan', () => {
+  const current=existing();
+  current.familyLoan={...current.familyLoan,rate:8,years:8,amount:20000,maxAmount:60000,originationFeePercent:0,
+    referenceOffer:{amount:20000,years:8,monthlyPayment:282.73,tin:8,tae:8.30,maxAmount:20000,source:'Captura aportada por la familia',verifiedAt:'2026-10-18'},
+    negotiation:{maxAmount:60000,maxYears:10,openingPercent:0,earlyRepaymentPercent:0,confirmed:false}};
+  current.motherTransfer={...current.motherTransfer,mode:'family-loan',repaymentMode:'custom',familyRate:0,familyYears:10};
+  const fresh=createHousingScenario(current,details());
+  assert.equal(fresh.familyLoan.amount,null,'new property resizes the bank principal');
+  assert.equal(fresh.familyLoan.rate,8);
+  assert.equal(fresh.familyLoan.years,8);
+  assert.deepEqual(fresh.familyLoan.referenceOffer,current.familyLoan.referenceOffer);
+  assert.deepEqual(fresh.familyLoan.negotiation,current.familyLoan.negotiation);
+  assert.equal(fresh.motherTransfer.repaymentMode,'custom');
+  assert.equal(fresh.motherTransfer.familyRate,0);
+  assert.equal(fresh.motherTransfer.familyYears,10);
+  fresh.familyLoan.referenceOffer.amount=1;
+  assert.equal(current.familyLoan.referenceOffer.amount,20000,'offer metadata is detached');
+  fresh.familyLoan.years=10;
+  assert.equal(fresh.motherTransfer.familyYears,10,'bank term edits do not rewrite family terms');
 });
 
 test('partial editing changes metadata without resetting saved financial data or timestamps', () => {

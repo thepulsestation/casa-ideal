@@ -534,6 +534,21 @@ test('a net service quote recalculates its final price and persists VAT for the 
  assert.equal(calculateScenario(app.server.get('vat-house').data).cash.purchaseFees,605);
 });
 
+test('explicitly simulating both reduced ITP shares never marks the fiscal documents as checked',async()=>{
+ const house=savedHome('tax-assumed-house');house.purchasePrice=175000;
+ house.tax.buyers=house.tax.buyers.map(b=>({...b,rate:.05,eligibilityConfirmed:false,eligibilityAssumed:false}));
+ const app=boot({joined:true,hash:'#compra',scenarios:[house]});await app.loading;
+ assert.equal(calculateScenario(app.draft()).tax.total,17500);
+ for(const i of [0,1]){
+  const field=app.node(`field-tax.buyers.${i}.eligibilityAssumed`);field.checked=true;await field.handlers.change({target:field});
+ }
+ assert.equal(calculateScenario(app.draft()).tax.total,8750);
+ assert.ok(app.html.includes('hipótesis'));
+ await app.flushTimers();
+ const saved=app.server.get('tax-assumed-house').data;
+ assert.ok(saved.tax.buyers.every(b=>b.eligibilityAssumed===true&&b.eligibilityConfirmed===false));
+});
+
 
 test('appraisal and waiting fields are editable in the main purchase view and remain saved per home',async()=>{
  const house=savedHome('waiting-house');house.purchasePrice=175000;house.icf.enabled=true;house.purchaseCosts.mode='provision';

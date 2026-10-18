@@ -131,3 +131,19 @@ test('pending arras never claims a confirmed release when nominal funding is bel
  s.cash.depositFundingMode='offset-confirmed';
  assert.ok(renderDepositFunding(s,calculateScenario(s),ui).includes('Habéis marcado la compensación como confirmada'));
 });
+
+test('reference-backed comparison offers only eight and ten bank years and preserves the separate family term',()=>{
+ const s=adoptPurchaseProvision(planningScenario());
+ s.familyLoan.rate=8;
+ s.familyLoan.referenceOffer={amount:20000,years:8,monthlyPayment:282.73,tin:8,tae:8.30,maxAmount:20000};
+ s.familyLoan.negotiation={maxAmount:60000,maxYears:10,openingPercent:0,earlyRepaymentPercent:0,confirmed:false};
+ Object.assign(s.motherTransfer,{repaymentMode:'custom',familyRate:0,familyYears:10});
+ const before=structuredClone(s),html=renderTermPicker(s,calculateScenario(s),ui);
+ assert.ok(html.includes('data-years="8"'));
+ assert.ok(html.includes('data-years="10"'));
+ assert.ok(!html.includes('data-years="15"'));assert.ok(!html.includes('data-years="20"'));
+ assert.ok(html.includes('por negociar'));
+ assert.ok(html.includes('no condiciones aprobadas'));
+ assert.ok(html.includes('calendario familiar actual es distinto'));
+ assert.deepEqual(s,before,'rendering never modifies either contract');
+});

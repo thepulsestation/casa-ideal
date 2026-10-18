@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeScenario,calculateScenario} from './finance.mjs';
-import {adoptFamilyFinancingPlan,adoptDiscountBreakdown,renderFinancingBreakdown,renderBorrowerDebt,renderFamilyLoanTerms} from './financing-ui.mjs';
+import {adoptFamilyFinancingPlan,adoptDiscountBreakdown,renderFinancingBreakdown,renderBorrowerDebt,renderFamilyLoanTerms,renderFamilyLoanReference} from './financing-ui.mjs';
+import {renderMotherTransfer} from './transfer-ui.mjs';
 
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const helpers={esc,euro:(v)=>v==null?'Pendiente':Number(v).toFixed(2),pct:v=>v==null?'—':(v*100).toFixed(2)+'%',row:(l,v)=>`<div>${l}: ${v}</div>`,notice:t=>`<p>${t}</p>`};
@@ -49,4 +50,38 @@ test('the verbal discount breakdown fills missing points once without activating
  assert.equal(original.mortgage.discounts.find(d=>d.id==='protection').points,null);
  next.mortgage.discounts.find(d=>d.id==='protection').points=null;
  assert.equal(adoptDiscountBreakdown(next).mortgage.discounts.find(d=>d.id==='protection').points,null);
+});
+
+test('the supplied reference is displayed separately from unapproved negotiation targets and simulation terms',()=>{
+ const s=adoptFamilyFinancingPlan(normalizeScenario({purchasePrice:175000}));
+ Object.assign(s.familyLoan,{rate:8,years:8,referenceOffer:{amount:20000,years:8,monthlyPayment:282.73,tin:8,tae:8.30,maxAmount:20000},negotiation:{maxAmount:60000,maxYears:10,openingPercent:0,earlyRepaymentPercent:0,confirmed:false}});
+ const r=calculateScenario(s),html=renderFamilyLoanTerms(s,r,helpers);
+ for(const text of ['20000.00','282.73','8,00 %','8,30 %','Objetivos pendientes de negociar','no condiciones aprobadas','8 años','10 años','calendario independiente'])assert.ok(html.includes(text),text);
+ assert.ok(!html.includes('15 años'));assert.ok(!html.includes('20 años'));assert.ok(!html.includes('12 %'));
+ assert.equal(s.familyLoan.rate,8,'TAE is reference metadata and does not replace the calculation TIN');
+ s.familyLoan.referenceOffer.years='<img src=x>';
+ assert.ok(!renderFamilyLoanReference(s,helpers).includes('<img'));
+});
+
+test('legacy plan adoption keeps a known independently agreed zero-interest family calendar',()=>{
+ const s=normalizeScenario({motherTransfer:{mode:'family-loan',repaymentMode:'custom',familyRate:0,familyYears:8}});
+ const next=adoptFamilyFinancingPlan(s);
+ assert.equal(next.motherTransfer.repaymentMode,'custom');
+ assert.equal(next.motherTransfer.familyRate,0);
+ assert.equal(next.motherTransfer.familyYears,8);
+});
+
+test('independent family zero-interest repayment explains the real mother contribution and counts one household outflow',()=>{
+ const s=adoptFamilyFinancingPlan(normalizeScenario({purchasePrice:175000}));
+ Object.assign(s.familyLoan,{amount:20000,rate:8,years:8});
+ Object.assign(s.motherTransfer,{mode:'family-loan',repaymentMode:'custom',familyRate:0,familyYears:10});
+ const r=calculateScenario(s);
+ const html=renderMotherTransfer(s,r,{...helpers,field:(label,path,opts)=>`<label>${label} ${path} ${opts?.hint||''}</label>`,check:()=>'',select:()=>'',section:(title,description,content)=>`<section>${title}${description}${content}</section>`,num:String});
+ assert.ok(html.includes('mamá soporta los intereses de su banco'));
+ assert.ok(html.includes('aportación real de mamá'));
+ assert.ok(html.includes('cuenta una sola vez'));
+ assert.ok(html.includes(helpers.euro(r.budget.motherNetExternalCostMonthly)));
+ assert.ok(html.includes('Cambiar los años del banco no modifica este contrato'));
+ assert.ok(r.familyLoan.monthlyPayment>r.motherTransfer.familyMonthlyRepayment);
+ assert.equal(r.motherTransfer.familyMonthlyRepayment,20000/120);
 });

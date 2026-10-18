@@ -1,4 +1,4 @@
-import { calculateScenario } from './finance.mjs?v=17';
+import { calculateScenario } from './finance.mjs?v=18';
 
 /** HTML only. All editable controls use the app's existing data-field binding. */
 export function renderMotherTransfer(s, result, { field, check, select, section, notice, row, euro, pct, num }) {
@@ -11,13 +11,13 @@ export function renderMotherTransfer(s, result, { field, check, select, section,
   ], 'Es una operación distinta del préstamo que ella firma con su banco.')}</div>`;
   const loanFields = `<div class="form-grid section-gap">${select('Cómo devolvéis el dinero a mamá','motherTransfer.repaymentMode',[
     ['same-as-bank','Los hijos cubrimos la misma cuota que paga mamá al banco'],
-    ['custom','Otro calendario pactado entre madre e hijos'],
+    ['custom','Calendario independiente · permite préstamo familiar al 0 %'],
   ],'Es un supuesto del presupuesto y debe quedar reflejado en un contrato familiar aceptado por el banco.')}</div>${transfer.repaymentMode==='same-as-bank'?notice('La devolución de los hijos se calcula con el mismo importe, TIN y plazo del préstamo bancario de mamá. Esa devolución cuenta en vuestro esfuerzo hipotecario; en el presupuesto conjunto sólo se suma una vez la salida al banco. Si le abonáis intereses, confirmad también su tratamiento fiscal.','info'):`<div class="form-grid section-gap">${field('Interés del préstamo entre madre e hijos', 'motherTransfer.familyRate', {
     suffix: '%', nullable: true, max: 100,
     hint: '0 % es posible si se pacta así. No es el interés que cobra el banco a mamá.',
   })}${field('Plazo de devolución de hijos a mamá', 'motherTransfer.familyYears', {
     suffix: 'años', nullable: true, max: 50, step: 1,
-    hint: 'Introduce el plazo real del contrato familiar. En blanco no se inventa una cuota.',
+    hint: 'Plazo independiente del préstamo bancario de mamá. Cambiar los años del banco no modifica este contrato. En blanco no se inventa una cuota.',
   })}</div>`}<div class="form-grid section-gap">${transfer.allocations.map((allocation,i)=>field(`Parte de la devolución del hijo ${i+1}`,`motherTransfer.allocations.${i}.share`,{suffix:'%',scale:100,max:100,hint:'El reparto debe sumar el 100 %. Es independiente del porcentaje de propiedad.'})).join('')}</div>${notice('Préstamo familiar: contrato, calendario de pagos y devoluciones reales. Se presenta el modelo 600 exento, generalmente en un mes. Si hay intereses, puede haber IRPF para mamá que esta estimación no calcula.', 'info')}`;
   const giftFields = `<div class="section-gap">${check('La donación se formalizará en escritura pública dentro del plazo legal', 'motherTransfer.giftPublicDeed',
     'La estimación usa la tarifa reducida madre a hijos cuando se cumple. Sin escritura usa la tarifa general.')}</div>
@@ -52,7 +52,7 @@ export function renderMotherTransfer(s, result, { field, check, select, section,
     ${row('Devolución de hijos a mamá', euro(current.motherTransfer.familyMonthlyRepayment, 2))}
     ${row('Parte neta de mamá tras recibir devolución', euro(current.budget.motherNetExternalCostMonthly, 2))}
     ${row('Esfuerzo de los titulares hipotecarios', pct(current.budget.debtRatio))}
-    </div></div>${!current.motherTransfer.termsKnown ? notice('Falta el calendario del préstamo familiar. La cuota bancaria de mamá puede estar calculada, pero la devolución de los hijos y su ratio de deuda siguen incompletos.') : ''}` : notice('Corrige los importes o el reparto para calcular la entrega. Los campos permanecen editables.', 'error');
+    </div></div>${!current.motherTransfer.termsKnown ? notice('Falta el calendario del préstamo familiar. La cuota bancaria de mamá puede estar calculada, pero la devolución de los hijos y su ratio de deuda siguen incompletos.') : ''}${!giftMode&&transfer.repaymentMode==='custom'&&transfer.familyRate===0?notice(`<strong>Los hijos devolvéis capital al 0 %; mamá soporta los intereses de su banco.</strong> ${current.motherTransfer.termsKnown&&current.familyLoan.monthlyPayment!=null?`Ahora el banco cobra ${euro(current.familyLoan.monthlyPayment,2)}/mes y vosotros devolvéis ${euro(current.motherTransfer.familyMonthlyRepayment,2)}/mes. La diferencia neta de mamá es ${euro(current.budget.motherNetExternalCostMonthly,2)}/mes mientras coinciden ambos pagos. `:''}No es un ahorro de intereses para todo el hogar: es una aportación real de mamá. El contrato debe reflejar lo que realmente se devuelve, y Sabadell debe valorar ambas deudas y su sostenibilidad. Si el plazo familiar supera al bancario, las devoluciones pueden continuar después de terminar su banco.`,'info'):''}` : notice('Corrige los importes o el reparto para calcular la entrega. Los campos permanecen editables.', 'error');
 
   const tableValue = (r, getter, format = euro) => r.valid ? format(getter(r)) : 'Revisar datos';
   const comparison = family.valid && gift.valid ? `<details class="section-gap"><summary>Comparar préstamo familiar y donación</summary>

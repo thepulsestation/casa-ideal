@@ -102,6 +102,27 @@ test('invalid quote VAT structures, modes, rates and disbursements cannot silent
   assert.equal(s.purchaseCosts.vat.appraisal.rate, 21);
 });
 
+test('an unquoted agency fee remains pending instead of being silently covered by the provision', () => {
+  const s = vatHome({ mode: 'provision', brokerQuotePending: true });
+  const r = calculateScenario(s);
+  assert.equal(r.cash.purchaseFees, 5000);
+  assert.ok(r.budget.missingEstimates.includes('Honorarios de agencia sin presupuesto final'));
+  assert.ok(r.warnings.some(w => w.includes('Falta el presupuesto final de honorarios de agencia')));
+  assert.equal(calculateScenario({ ...s, purchaseCosts: { ...s.purchaseCosts, brokerQuotePending: 'yes' } }).valid, false);
+});
+
+test('a reference offer uses TIN for payment and keeps TAE as reference only', () => {
+  close(monthlyPayment(20000, 8, 8), 282.73);
+  const s = vatHome();
+  s.familyLoan.amount = 20000;
+  s.familyLoan.rate = 8;
+  s.familyLoan.referenceOffer = { tin: 8, tae: 8.30, amount: 20000, years: 8 };
+  const r = calculateScenario(s);
+  close(r.familyLoan.monthlyPayment, 282.73);
+  s.familyLoan.referenceOffer.tae = 99;
+  close(calculateScenario(s).familyLoan.monthlyPayment, 282.73);
+});
+
 test('French amortization matches bank illustration and reconciles principal', () => {
   close(monthlyPayment(200000, 2.7, 30), 811.1964);
   close(monthlyPayment(200000, 3.7, 30), 920.56597);
@@ -130,6 +151,73 @@ test('tax follows reference value, ownership shares, and confirmed relief', () =
   const unconfirmed = calculateTransferTax({ purchasePrice: 250000, buyers: [{ share: 1, rate: 0.05, eligibilityConfirmed: false }] });
   assert.equal(unconfirmed.total, 25000);
   assert.equal(unconfirmed.warnings.length, 1);
+});
+
+test('confirmed reduced tax is applied without marking it as a hypothesis', () => {
+  const tax = calculateTransferTax({ purchasePrice: 175000, buyers: youngBuyers });
+  assert.equal(tax.total, 8750);
+  assert.deepEqual(tax.warnings, []);
+  for (const buyer of tax.buyers) {
+    assert.equal(buyer.appliedRate, 0.05);
+    assert.equal(buyer.eligibilityConfirmed, true);
+    assert.equal(buyer.eligibilityAssumed, false);
+    assert.equal(buyer.eligibilityStatus, 'confirmed');
+    assert.equal(buyer.reducedRateAppliedAsHypothesis, false);
+  }
+});
+
+test('explicit reduced-tax hypotheses apply the requested rate without confirming eligibility', () => {
+  const buyers = youngBuyers.map((buyer) => ({ ...buyer, eligibilityConfirmed: false, eligibilityAssumed: true }));
+  const before = structuredClone(buyers);
+  const result = calculateScenario({ purchasePrice: 175000, tax: { buyers } });
+  assert.equal(result.valid, true);
+  assert.equal(result.tax.total, 8750);
+  assert.equal(result.tax.warnings.length, 2);
+  assert.ok(result.tax.warnings.every((warning) => /hipótesis.*documentación fiscal/.test(warning)));
+  assert.ok(result.validation.warnings.some((warning) => /hipótesis pendiente de documentación/.test(warning)));
+  for (const buyer of result.tax.buyers) {
+    assert.equal(buyer.appliedRate, 0.05);
+    assert.equal(buyer.eligibilityConfirmed, false);
+    assert.equal(buyer.eligibilityAssumed, true);
+    assert.equal(buyer.eligibilityStatus, 'assumed');
+    assert.equal(buyer.reducedRateAppliedAsHypothesis, true);
+  }
+  assert.deepEqual(buyers, before);
+});
+
+test('pending relief without an explicit hypothesis retains the progressive general tariff', () => {
+  const buyers = [{ share: 1, rate: 0.05, eligibilityConfirmed: false }];
+  const scenario = normalizeScenario({ purchasePrice: 1600000, tax: { buyers } });
+  assert.equal(scenario.tax.buyers[0].eligibilityAssumed, false);
+  const tax = calculateTransferTax({ purchasePrice: 1600000, buyers: scenario.tax.buyers });
+  assert.equal(tax.total, 178000);
+  assert.equal(tax.buyers[0].eligibilityStatus, 'pending');
+  assert.equal(tax.buyers[0].eligibilityConfirmed, false);
+  assert.equal(tax.buyers[0].reducedRateAppliedAsHypothesis, false);
+  assert.match(tax.warnings[0], /se calcula la tarifa general/);
+  const legacyFlag = calculateTransferTax({ purchasePrice: 1600000, buyers: [{ ...buyers[0], customRateConfirmed: true }] });
+  assert.equal(legacyFlag.total, 178000);
+});
+
+test('tax hypothesis flags must be booleans and remain independent of confirmation', () => {
+  for (const eligibilityAssumed of ['true', 1, null, [], {}]) {
+    const validation = validateScenario({ tax: { buyers: [{ share: 1, rate: 0.05, eligibilityConfirmed: false, eligibilityAssumed }] } });
+    assert.equal(validation.valid, false);
+    assert.ok(validation.errors.some((error) => /Hipótesis fiscal comprador 1/.test(error)));
+  }
+  for (const eligibilityConfirmed of [false, true]) {
+    for (const eligibilityAssumed of [false, true]) {
+      const buyers = [{ share: 1, rate: 0.05, eligibilityConfirmed, eligibilityAssumed }];
+      assert.equal(validateScenario({ tax: { buyers } }).valid, true);
+      const tax = calculateTransferTax({ purchasePrice: 175000, buyers });
+      assert.equal(tax.total, eligibilityConfirmed || eligibilityAssumed ? 8750 : 17500);
+      if (eligibilityConfirmed) {
+        assert.equal(tax.buyers[0].eligibilityStatus, 'confirmed');
+        assert.equal(tax.buyers[0].reducedRateAppliedAsHypothesis, false);
+        assert.deepEqual(tax.warnings, []);
+      }
+    }
+  }
 });
 
 test('Catalonia progressive general tariff includes boundaries and marginal brackets', () => {

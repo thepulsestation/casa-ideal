@@ -1,4 +1,4 @@
-import {calculatePreclosing} from './preclosing.mjs?v=17';
+import {calculatePreclosing} from './preclosing.mjs?v=18';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -23,8 +23,8 @@ export const DEFAULT_SCENARIO = Object.freeze({
   tax: {
     mode: 'used',
     buyers: [
-      { id: 'buyer-1', label: 'Comprador 1', share: 0.5, rate: 0.1, eligibilityConfirmed: false },
-      { id: 'buyer-2', label: 'Comprador 2', share: 0.5, rate: 0.1, eligibilityConfirmed: false },
+      { id: 'buyer-1', label: 'Comprador 1', share: 0.5, rate: 0.1, eligibilityConfirmed: false, eligibilityAssumed: false },
+      { id: 'buyer-2', label: 'Comprador 2', share: 0.5, rate: 0.1, eligibilityConfirmed: false, eligibilityAssumed: false },
     ],
     vatRate: 0.1,
     ajdRate: 0.015,
@@ -48,7 +48,7 @@ export const DEFAULT_SCENARIO = Object.freeze({
   purchaseCosts: {
     mode: 'itemized', provisionAmount: 5000, provisionBeforeSigning: 0,
     appraisal: 0, legal: 0, notary: 0, registry: 0, agency: 0,
-    broker: 0, other: 0, renovations: 0, moving: 0, reserve: 0, vat: {},
+    broker: 0, other: 0, renovations: 0, moving: 0, reserve: 0, vat: {}, brokerQuotePending: false,
   },
   familyLoan: { enabled: false, amount: null, maxAmount: 60000, rate: null, years: null, extraBuffer: 3000, assumedTerms: false, coverEarlyLiquidity: false, originationFeePercent: 0, originationFeeFixed: 0 },
   motherTransfer: {
@@ -140,6 +140,7 @@ export function normalizeScenario(input = {}) {
       result[section][key] = value.map((entry) => ({ ...entry }));
     }
   }
+  result.tax.buyers = result.tax.buyers.map((buyer) => ({ eligibilityAssumed: false, ...buyer }));
   const householdRoles = ['mother', 'sister'];
   const householdRows = result.budget.householdIncomes;
   const identifiedHouseholdRows = new Map();
@@ -245,7 +246,7 @@ export function standardCataloniaTransferTax(taxableValue) {
     + Math.max(value - 1500000, 0) * 0.13;
 }
 
-/** Lower selected buyer tax requires an explicit eligibility confirmation. */
+/** Reduced tax can be confirmed or explicitly simulated, retaining that distinction. */
 export function calculateTransferTax({ purchasePrice, referenceValue = 0, declaredValue = 0, buyers = [], mode = 'used', vatRate = 0.1, ajdRate = 0.015 } = {}) {
   const price = nonnegative(purchasePrice);
   const base = Math.max(price, nonnegative(referenceValue), nonnegative(declaredValue));
@@ -261,11 +262,16 @@ export function calculateTransferTax({ purchasePrice, referenceValue = 0, declar
     const requestedRate = buyer.rate == null ? 0.1 : nonnegative(buyer.rate);
     const reduced = requestedRate < 0.1;
     const confirmed = !reduced || buyer.eligibilityConfirmed === true;
-    if (!confirmed) warnings.push(`${buyer.label || `Comprador ${index + 1}`}: tipo reducido sin confirmar; se calcula la tarifa general.`);
+    const assumed = buyer.eligibilityAssumed === true;
+    const reducedRateAppliedAsHypothesis = reduced && !confirmed && assumed;
+    const eligibilityStatus = !reduced ? 'not-required' : confirmed ? 'confirmed' : assumed ? 'assumed' : 'pending';
+    if (reducedRateAppliedAsHypothesis) warnings.push(`${buyer.label || `Comprador ${index + 1}`}: tipo reducido simulado como hipótesis; requisitos pendientes de comprobar con la documentación fiscal.`);
+    else if (!confirmed) warnings.push(`${buyer.label || `Comprador ${index + 1}`}: tipo reducido sin confirmar; se calcula la tarifa general.`);
     const share = nonnegative(buyer.share);
-    const fullTax = (reduced && confirmed) || buyer.customRateConfirmed === true ? base * requestedRate : generalTax;
+    const applyRequestedRate = reduced ? confirmed || assumed : buyer.customRateConfirmed === true;
+    const fullTax = applyRequestedRate ? base * requestedRate : generalTax;
     const amount = fullTax * share;
-    return { ...buyer, share, requestedRate, appliedRate: base ? fullTax / base : 0, eligibilityConfirmed: confirmed, taxableShare: base * share, amount };
+    return { ...buyer, share, requestedRate, appliedRate: base ? fullTax / base : 0, eligibilityConfirmed: confirmed, eligibilityAssumed: assumed, eligibilityStatus, reducedRateAppliedAsHypothesis, taxableShare: base * share, amount };
   });
   return { mode, base, total: sum(rows.map((row) => row.amount)), vat: 0, ajd: 0, buyers: rows, warnings };
 }
@@ -394,6 +400,7 @@ export function validateScenario(input = {}) {
   optionalBoolean(s.budget.sharedLivingCosts, 'Gastos de vida compartidos entre alquiler y compra');
   optionalBoolean(s.budget.propertyCostsEstimated, 'Importes orientativos de la casa');
   optionalBoolean(s.budget.propertyCostsConfirmed, 'Recibos y cuotas de la casa comprobados');
+  optionalBoolean(s.purchaseCosts.brokerQuotePending, 'Honorarios de agencia pendientes');
   if(s.budget.propertyCostsEstimated && s.budget.propertyCostsConfirmed)errors.push('Una provisión orientativa no puede figurar también como importe confirmado.');
   numeric(s.budget.ibiLiquidableBase, 'Base liquidable del IBI', 0, Infinity, true);
   numeric(s.budget.ibiRatePercent, 'Tipo municipal del IBI', 0, 100, true);
@@ -434,7 +441,10 @@ export function validateScenario(input = {}) {
       numeric(buyer.rate, `ITP comprador ${index + 1}`, 0, 0.25, true);
       optionalText(buyer.label, `Nombre comprador ${index + 1}`);
       optionalBoolean(buyer.eligibilityConfirmed, `Requisitos fiscales comprador ${index + 1}`);
-      if (n(buyer.rate, 0.1) < 0.1 && !buyer.eligibilityConfirmed) warnings.push(`Comprador ${index + 1}: confirma todos los requisitos fiscales antes de aplicar el tipo reducido.`);
+      optionalBoolean(buyer.eligibilityAssumed, `Hipótesis fiscal comprador ${index + 1}`);
+      if (n(buyer.rate, 0.1) < 0.1 && buyer.eligibilityConfirmed !== true) warnings.push(buyer.eligibilityAssumed === true
+        ? `Comprador ${index + 1}: tipo reducido simulado como hipótesis pendiente de documentación; no acredita el derecho fiscal.`
+        : `Comprador ${index + 1}: confirma todos los requisitos fiscales antes de aplicar el tipo reducido.`);
     });
   }
   if (!['used', 'new'].includes(s.tax.mode)) errors.push('El tipo de compra debe ser used (segunda mano) o new (primera entrega).');
@@ -707,6 +717,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   if (earlyLiquidityExtraBorrowing > 0.01) warnings.push('El préstamo automático incorpora liquidez adicional para anticipar las arras. No es un gasto de compra adicional ni garantiza recuperar ese anticipo: hay que confirmar la liquidación y los desembolsos de banco e ICF.');
   if (purchaseFeesEstimated) warnings.push('Se usan gastos de compra orientativos como importe final previsto: falta confirmar si la estimación del gestor cubre IVA y todos los servicios. La provisión no es un máximo ni incluye ITP/IVA de la vivienda, reformas, reservas o seguros. Confirma presupuestos y qué parte debe pagarse antes de firmar.');
   if (purchaseFeesEstimated && purchaseFeesItemized > 0) warnings.push('Se conserva el desglose de gastos de compra como referencia, pero solo se suma la provisión general seleccionada.');
+  if (s.purchaseCosts.brokerQuotePending) warnings.push('Falta el presupuesto final de honorarios de agencia, con su IVA cuando corresponda. No se presume cubierto por la provisión de gastos ni gratuito; el dinero inicial puede aumentar.');
   if (s.icf.enabled && priceContribution > 0.01) warnings.push('El ICF estimado no cubre toda la aportación al precio por su límite o por la tasación. La parte no financiada sigue incluida en la necesidad de caja.');
   if (closingNetPayment < 0) warnings.push('La liquidación de firma muestra un saldo teórico a favor. No presupone que el banco o el ICF reintegren las arras; confirma importes, destinatarios y fechas de desembolso antes de comprometerlas.');
   if (totalReserve === 0) warnings.push('No se ha reservado colchón de emergencia.');
@@ -763,6 +774,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const currentComparable = currentRent + currentUtilitiesMonthly + existingDebt + familyExistingDebt + householdMonthly + nonnegative(s.budget.currentOtherMonthly);
   const missingEstimates = [
     ...(purchaseFeesEstimated ? ['Provisión de gastos de compra sin presupuestos individuales'] : []),
+    ...(s.purchaseCosts.brokerQuotePending ? ['Honorarios de agencia sin presupuesto final'] : []),
     ...(purchaseFees === 0 ? ['Gastos de compraventa y tasación'] : []),
     ...(!s.budget.propertyCostsConfirmed ? ['IBI, residuos y comunidad / conservación sin comprobar'] : []),
     ...(nonnegative(s.budget.maintenanceAnnual) === 0 ? ['Mantenimiento de la casa'] : []),

@@ -1,4 +1,4 @@
-import {monthlyPayment, compareFamilyLoanTerms} from './finance.mjs?v=17';
+import {monthlyPayment, compareFamilyLoanTerms} from './finance.mjs?v=18';
 
 // Apply the financing plan requested by the family once to legacy scenarios.
 // Eligibility remains unconfirmed; later edits (including disabling ICF) win.
@@ -10,7 +10,8 @@ export function adoptFamilyFinancingPlan(scenario) {
   s.mortgage={...s.mortgage,ltv:.8,amount:null};
   s.icf={...s.icf,enabled:true,ltv:.2,maxAmount:50000,repaymentYears:5,eligibilityConfirmed:false};
   s.familyLoan={...s.familyLoan,enabled:true,amount:null,maxAmount:60000,extraBuffer:3000,rate:s.familyLoan?.rate??5,years:s.familyLoan?.years??10,assumedTerms:s.familyLoan?.assumedTerms!==false||s.familyLoan?.rate==null||s.familyLoan?.years==null};
-  s.motherTransfer={...s.motherTransfer,mode:'family-loan',repaymentMode:'same-as-bank'};
+  const independentFamilyTerms=s.motherTransfer?.mode==='family-loan'&&s.motherTransfer?.repaymentMode==='custom'&&s.motherTransfer?.familyRate!=null&&s.motherTransfer?.familyYears>0;
+  s.motherTransfer={...s.motherTransfer,mode:'family-loan',repaymentMode:independentFamilyTerms?'custom':'same-as-bank'};
   return s;
 }
 
@@ -33,8 +34,28 @@ export function renderFinancingBreakdown(s,r,{euro,pct,notice,row,compact=false}
 
 export function renderFamilyLoanTerms(s,r,{euro,pct,notice}) {
   if(s.familyLoan.rate===null||s.familyLoan.rate===undefined)return notice('Introduce el TIN del préstamo de mamá para comparar los plazos. No se presupone un tipo si lo has dejado pendiente.','info');
-  const terms=compareFamilyLoanTerms(s,[8,10,15,20]);
-  return `<div class="section-gap"><h3>Elegid un plazo para el préstamo de mamá</h3><p>Se recalcula con el mismo capital y TIN introducidos. Un plazo más largo baja la cuota y aumenta los intereses.</p><div class="table-wrap"><table><thead><tr><th>Plazo</th><th class="number">Cuota /mes</th><th class="number">Intereses totales</th><th class="number">Deudas de titulares</th><th></th></tr></thead><tbody>${terms.map(t=>`<tr><td>${t.years} años</td><td class="number">${euro(t.monthlyPayment,2)}</td><td class="number">${euro(t.totalInterest,2)}</td><td class="number">${t.result?.budget?.borrowerDebtRatioIncomplete?'≥ ':''}${pct(t.borrowerDebtRatio)}</td><td><button class="button secondary" data-action="loan-term" data-years="${t.years}">${Number(s.familyLoan.years)===t.years?'Seleccionado':'Usar '+t.years+' años'}</button></td></tr>`).join('')}</tbody></table></div>${notice('Incluimos 8 años. Ejemplo provisional: 20.000 € al 12 % TIN, sin comisiones, son 325,06 €/mes. Falta saber si el 12 % comunicado es TIN o TAE. Los plazos de 10, 15 y 20 años son hipótesis de comparación. No se ha verificado que el banco ofrezca esos plazos ni ese TIN a mamá. Su edad, ingresos, deudas, comisiones y TAE pueden cambiar las condiciones.','info')}</div>`;
+  const terms=compareFamilyLoanTerms(s,familyLoanComparisonYears(s));
+  return `<div class="section-gap"><h3>Elegid un plazo para el préstamo de mamá</h3>${renderFamilyLoanReference(s,{euro})}<p>Se recalcula con el mismo capital y TIN introducidos. Un plazo más largo baja la cuota y aumenta los intereses. Cambiar este plazo bancario no cambia el calendario independiente pactado entre madre e hijos.</p><div class="table-wrap"><table><thead><tr><th>Plazo</th><th class="number">Cuota /mes</th><th class="number">Intereses totales</th><th class="number">Deudas de titulares</th><th></th></tr></thead><tbody>${terms.map(t=>`<tr><td>${t.years} años${t.years>Number(s.familyLoan.referenceOffer?.years??8)?' · por negociar':''}</td><td class="number">${euro(t.monthlyPayment,2)}</td><td class="number">${euro(t.totalInterest,2)}</td><td class="number">${t.result?.budget?.borrowerDebtRatioIncomplete?'≥ ':''}${pct(t.borrowerDebtRatio)}</td><td><button class="button secondary" data-action="loan-term" data-years="${t.years}">${Number(s.familyLoan.years)===t.years?'Seleccionado':'Usar '+t.years+' años'}</button></td></tr>`).join('')}</tbody></table></div>${notice(familyLoanTermNotice(s),'info')}</div>`;
+}
+
+// The saved screenshot is a reference, never an approval for another principal or term.
+export function familyLoanComparisonYears(s) {
+  return s.familyLoan?.negotiation ? [8,10] : [8,10,15,20];
+}
+
+export function familyLoanTermNotice(s) {
+  return s.familyLoan?.negotiation
+    ? 'La captura muestra un máximo de 8 años. Diez años y un límite de 60.000 € son objetivos por negociar, no condiciones aprobadas. Para comparar se mantiene el TIN introducido; la cuota y la TAE de otra oferta pueden cambiar. El calendario del préstamo familiar se edita por separado.'
+    : 'Incluimos 8 años. Ejemplo provisional: 20.000 € al 12 % TIN, sin comisiones, son 325,06 €/mes. Falta saber si el 12 % comunicado es TIN o TAE. Los plazos de 10, 15 y 20 años son hipótesis de comparación. No se ha verificado que el banco ofrezca esos plazos ni ese TIN a mamá. Su edad, ingresos, deudas, comisiones y TAE pueden cambiar las condiciones.';
+}
+
+export function renderFamilyLoanReference(s,{euro}) {
+  const reference=s.familyLoan?.referenceOffer;
+  if(!reference)return '';
+  const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const percent=value=>Number.isFinite(Number(value))?escape(Number(value).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}))+' %':'Pendiente';
+  const negotiation=s.familyLoan.negotiation;
+  return `<div class="notice info"><strong>Referencia de la captura · ${euro(reference.amount)} a ${escape(reference.years)} años</strong><p>${euro(reference.monthlyPayment,2)}/mes · TIN ${percent(reference.tin)} · TAE ${percent(reference.tae)}. Límite mostrado: ${euro(reference.maxAmount)}.</p><p class="fine-print">La cuota corresponde al importe y plazo de la captura. La calculadora usa el TIN; la TAE se conserva como referencia del coste, no se suma al interés.${negotiation&&!negotiation.confirmed?` Objetivos pendientes de negociar: hasta ${euro(negotiation.maxAmount)} y ${escape(negotiation.maxYears)} años, apertura ${percent(negotiation.openingPercent)} y amortización parcial o total ${percent(negotiation.earlyRepaymentPercent)}.`:''}</p></div>`;
 }
 
 export function renderBorrowerDebt(s,r,{euro,pct,notice,row,esc}) {

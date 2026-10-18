@@ -41,6 +41,10 @@ El servidor local escucha en http://127.0.0.1:43187. GitHub Pages sirve los arch
 
 ## Límites de los resultados
 
+El tipo reducido puede aplicarse como hipótesis explícita por comprador sin marcar sus requisitos como comprobados; ambas situaciones se muestran y validan por separado. Los honorarios de agencia pendientes impiden dar por cerrado el presupuesto aunque exista una provisión general.
+
+Las ofertas de referencia del préstamo de la madre se conservan como datos privados del escenario, con TIN para el cálculo y TAE informativa. Los límites y comisiones que se negocian no se presentan como condiciones aprobadas. El préstamo familiar puede tener un interés y un plazo propios; una nueva vivienda conserva esa elección y la tabla de plazos bancarios no cambia el contrato familiar implícitamente.
+
 Los gastos se introducen como importes finales, con IVA cuando corresponda. En los presupuestos por concepto, reformas y mudanza se puede indicar expresamente un importe sin IVA, su tipo y los suplidos incluidos que no reciben el recargo. El modelo añade ese IVA una sola vez al coste y a la necesidad de financiación; tasación y asesoría incluyen su IVA antes de firmar. La provisión general sigue siendo un total orientativo, sin multiplicarla por el 21 %: falta confirmar si la estimación verbal de 3.000–5.000 € cubre IVA y todos los conceptos. Los impuestos sobre la vivienda, arras, reservas y otros gastos no reciben un IVA general adicional.
 
 Los importes bancarios proceden de una conversación y escenarios editables, no de una oferta aprobada. La FEIN, los presupuestos y la situación fiscal de cada adquirente prevalecen. ICF se explora de forma separada del aval ICO. Los seguros, impuestos locales, reformas y gastos de vida deben presupuestarse para cada casa. Las cifras totales de deuda no incluyen treinta años de suministros, seguros o reparaciones futuras.

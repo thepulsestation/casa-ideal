@@ -1,5 +1,5 @@
-import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=17';
-import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=17';
+import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=18';
+import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=18';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
@@ -175,11 +175,15 @@ export function createHousingScenario(current = {}, rawDetails = {}) {
     maxAmount: 60000,
     coverEarlyLiquidity: true,
   };
-  // New scenarios use the explicitly chosen same-as-bank repayment hypothesis.
-  // Preserve custom terms as a reference; saved scenarios are never migrated.
+  // A family-supplied offer and negotiated hypotheses travel with the family;
+  // the amount is resized for the new property instead of copying the old loan.
+  if(source.familyLoan.referenceOffer||source.familyLoan.negotiation) {
+    fresh.familyLoan={...structuredClone(source.familyLoan),enabled:true,amount:null,coverEarlyLiquidity:true};
+  }
+  // Preserve the real independent family contract, including a chosen 0% rate.
+  // Changing the bank term must not silently change the children's obligation.
   fresh.motherTransfer = structuredClone(source.motherTransfer);
   fresh.motherTransfer.giftNotaryCost = 0;
-  if (fresh.motherTransfer.mode === 'family-loan') fresh.motherTransfer.repaymentMode = 'same-as-bank';
   fresh.icf = { ...structuredClone(DEFAULT_SCENARIO.icf), enabled: true, eligibilityConfirmed: false };
   fresh.stress = structuredClone(source.stress);
   fresh.financingPlanVersion = 2;
