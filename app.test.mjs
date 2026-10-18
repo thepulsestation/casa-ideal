@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeScenario, calculateScenario } from './finance.mjs';
 import { buildFamilyHash } from './family-access.mjs';
+import {extractFamilyProfile} from './family-profile.mjs';
 
 const CODE = 'cd34'.repeat(12);
 const DRAFT_KEY = 'casa-ideal.draft.v1';
@@ -596,4 +597,32 @@ test('changing only the home in a private purchase route opens the requested sav
  app.navigate(buildFamilyHash('compra',CODE,second.id));
  assert.equal(app.draft().id,second.id);
  assert.ok(app.location.hash.startsWith('#compra?'));
+});
+
+test('the monthly allocation tab survives a private reload and shares only its family plan edits',async()=>{
+ const first=savedHome('allocation-first'),second=savedHome('allocation-second');
+ first.budget.existingDebtMonthly=200;
+ first.familyPlan={sharedCostMode:'equal',personalDebtOwner:'buyer1',university:{amount:425,endMonth:'2027-06'},sisterJob:{enabled:true,amount:450,startMonth:'2027-01'}};
+ const profile={...extractFamilyProfile(first),createdAt:first.createdAt,updatedAt:first.updatedAt};
+ const app=boot({hash:buildFamilyHash('reparto',CODE,first.id),scenarios:[first,second,profile]});await app.loading;
+ assert.ok(app.location.hash.startsWith('#reparto?'));assert.ok(app.html.includes('Qué paga cada uno'));
+ assert.ok(app.html.includes('family-plan-month'));assert.ok(app.html.includes('Tu hermano'));
+ const horizon=app.node('family-plan-horizon');horizon.value='144';await horizon.handlers.change({target:horizon});assert.ok(app.html.includes('144 meses'));
+ const university=app.node('field-familyPlan.university.amount');university.value='350';await university.handlers.change({target:university});await app.flushTimers();
+ assert.equal(app.server.get(profile.id).data.familyPlan.university.amount,350);
+ assert.equal(app.server.get(profile.id).data.budget.existingDebtMonthly,200);
+ app.navigate(buildFamilyHash('resumen',CODE,second.id));
+ assert.equal(app.draft().id,second.id);assert.equal(app.draft().familyPlan.university.amount,350);
+ assert.equal(calculateScenario(app.draft(),{asOfMonth:'2026-10'}).budget.universityMonthly,350);
+});
+
+test('an invalid university date can be repaired without losing the shared plan',async()=>{
+ const home=savedHome('allocation-repair');home.familyPlan={sharedCostMode:'equal',university:{amount:300,endMonth:'2027-06'}};
+ const profile={...extractFamilyProfile(home),createdAt:home.createdAt,updatedAt:home.updatedAt};
+ const app=boot({hash:buildFamilyHash('reparto',CODE,home.id),scenarios:[home,profile]});await app.loading;
+ let end=app.node('field-familyPlan.university.endMonth');end.value='2027-13';await end.handlers.change({target:end});await app.flushTimers();
+ assert.equal(app.server.get(profile.id).data.familyPlan.university.endMonth,'2027-06');
+ end=app.node('field-familyPlan.university.endMonth');end.value='2027-05';await end.handlers.change({target:end});await app.flushTimers();
+ assert.equal(app.server.get(profile.id).data.familyPlan.university.endMonth,'2027-05');
+ assert.ok(app.html.includes('Qué paga cada uno'));
 });

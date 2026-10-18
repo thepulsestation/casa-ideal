@@ -53,3 +53,14 @@ test('a profile cannot smuggle property-specific fields through common-budget ap
  assert.equal(applied.cash.depositAmount,source.cash.depositAmount);assert.deepEqual(applied.mortgage,source.mortgage);assert.deepEqual(applied.tax,source.tax);
  assert.equal(applyFamilyProfile(source,{...profile,id:'other-profile'}),source);
 });
+
+test('a dated personal-expense plan is shared and detached without replacing a home loan',()=>{
+ const first=scenario();first.familyPlan={sharedCostMode:'equal',personalDebtOwner:'buyer1',university:{amount:425,endMonth:'2027-06'},sisterJob:{enabled:true,amount:450,startMonth:'2027-01'}};
+ const profile=extractFamilyProfile(first),other=normalizeScenario({id:'second-home',familyLoan:{maxAmount:18000,years:8}});
+ const applied=applyFamilyProfile(other,profile);
+ assert.deepEqual(applied.familyPlan,first.familyPlan);
+ assert.equal(applied.familyLoan.maxAmount,18000);assert.equal(applied.familyLoan.years,8);
+ applied.familyPlan.university.amount=0;assert.equal(profile.familyPlan.university.amount,425);
+ for(const path of ['familyPlan.sharedCostMode','familyPlan.university.amount','familyPlan.sisterJob.startMonth'])assert.equal(isFamilyField(path),true);
+ assert.equal(isFamilyField('familyPlanExtra.amount'),false);
+});

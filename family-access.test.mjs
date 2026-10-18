@@ -148,3 +148,8 @@ test('a fresh device selects a sole shared scenario while multiple or empty list
   assert.equal(selectInitialFamilyScenario({ scenarios: null }), null);
   assert.equal(selectInitialFamilyScenario(), null);
 });
+
+test('the monthly allocation route preserves private access and its selected home',()=>{
+ const route=parseFamilyRoute(buildFamilyHash('reparto',CODE,'home-plan'));
+ assert.equal(route.view,'reparto');assert.equal(route.inviteCode,CODE);assert.equal(route.scenarioId,'home-plan');
+});

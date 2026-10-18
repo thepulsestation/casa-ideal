@@ -1,4 +1,4 @@
-import {calculatePreclosing} from './preclosing.mjs?v=19';
+import {calculatePreclosing} from './preclosing.mjs?v=20';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -90,6 +90,13 @@ const rounded = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
 const sum = (values) => values.reduce((total, value) => total + value, 0);
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+const isMonth = (value) => typeof value === 'string'
+  && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && Number(value.slice(0, 4)) >= 1900;
+const currentMadridMonth = () => {
+  const parts = new Intl.DateTimeFormat('en', {timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit'})
+    .formatToParts(new Date());
+  return `${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}`;
+};
 
 export function normalizeScenario(input = {}) {
   const base = structuredClone(DEFAULT_SCENARIO);
@@ -507,6 +514,24 @@ export function validateScenario(input = {}) {
   }
   const monthlyKeys = ['existingDebtMonthly', 'familyIncomeMonthly', 'familyExistingDebtMonthly', 'utilitiesMonthly', 'carMonthly', 'foodMonthly', 'otherMonthly', 'storageMonthly', 'ibiAnnual', 'wasteAnnual', 'maintenanceAnnual', 'communityMonthly', 'externalHomeInsuranceAnnual', 'currentRent', 'currentUtilitiesMonthly', 'currentOtherMonthly'];
   for (const key of monthlyKeys) numeric(s.budget[key], `Presupuesto ${key}`, 0, Infinity, key === 'externalHomeInsuranceAnnual');
+  // University tuition is a dated household expense belonging to the brother,
+  // not a credit installment for the borrowers' bank debt ratio. Validate this
+  // small shared contract here without importing the timeline (which uses us).
+  if (s.familyPlan !== undefined) {
+    if (!isRecord(s.familyPlan)) errors.push('El reparto familiar debe ser un objeto válido.');
+    else if (s.familyPlan.university !== undefined) {
+      const university = s.familyPlan.university;
+      if (!isRecord(university)) errors.push('El gasto de universidad debe ser un objeto válido.');
+      else {
+        numeric(university.amount === undefined ? 0 : university.amount, 'Cuota de universidad');
+        for (const [value, label] of [[university.startMonth, 'Inicio de la universidad'], [university.endMonth, 'Último mes de universidad']]) {
+          if (value !== undefined && value !== null && !isMonth(value)) errors.push(`${label}: indica un mes válido con formato AAAA-MM.`);
+        }
+        if (n(university.amount) > 0 && !isMonth(university.endMonth)) errors.push('Indica el último mes de pago de la universidad.');
+        if (isMonth(university.startMonth) && isMonth(university.endMonth) && university.startMonth > university.endMonth) errors.push('El inicio de la universidad debe ser anterior o igual a su último mes de pago.');
+      }
+    }
+  }
   numeric(s.budget.debtRatioLimit, 'Límite endeudamiento', 0.01, 1);
   if (!Array.isArray(s.budget.incomes)) errors.push('Los ingresos deben ser una lista.');
   if (s.budget.incomes.length > 2) errors.push('Solo hay dos titulares hipotecarios. Añade los ingresos de madre y hermana en sus perfiles de convivientes.');
@@ -545,9 +570,13 @@ function emptyLoan() {
   return { principal: 0, rate: 0, years: 0, months: 0, monthlyPayment: 0, totalInterest: 0, totalPaid: 0 };
 }
 
-export function calculateScenario(input = {}, { includeSchedule = false } = {}) {
+export function calculateScenario(input = {}, { includeSchedule = false, asOfMonth = currentMadridMonth() } = {}) {
   const s = normalizeScenario(input);
   const validation = validateScenario(s);
+  if (!isMonth(asOfMonth)) {
+    validation.errors.push('El mes de referencia del presupuesto debe tener formato AAAA-MM.');
+    validation.valid = false;
+  }
   if (!validation.valid) return { valid: false, validation, warnings: validation.warnings };
   const warnings = [...validation.warnings];
   const price = n(s.purchasePrice);
@@ -758,7 +787,10 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   if (currentUtilitiesUnitemizedMonthly > 0 && currentUtilitiesDetailedMonthly > 0 && !sharedLivingCosts) warnings.push(`Se conservan un importe conjunto y un desglose de suministros actuales: solo se cuenta ${currentUtilityMode === 'aggregate' ? 'el importe conjunto' : 'el desglose'}.`);
   if (sharedLivingCosts && (currentUtilitiesUnitemizedMonthly > 0 || currentUtilitiesDetailedMonthly > 0) && Math.abs(currentUtilitiesIndependentMonthly - utilitiesMonthly) > 0.005) warnings.push('Se usan los mismos suministros en alquiler y compra. Los importes actuales anteriores, distintos, se conservan como referencia y no se suman.');
   const storageMonthly = nonnegative(s.budget.storageMonthly);
-  const householdMonthly = nonnegative(s.budget.carMonthly) + nonnegative(s.budget.foodMonthly) + nonnegative(s.budget.otherMonthly) + storageMonthly;
+  const university = s.familyPlan?.university;
+  const universityMonthly = university && (university.startMonth == null || asOfMonth >= university.startMonth)
+    && isMonth(university.endMonth) && asOfMonth <= university.endMonth ? nonnegative(university.amount) : 0;
+  const householdMonthly = nonnegative(s.budget.carMonthly) + nonnegative(s.budget.foodMonthly) + nonnegative(s.budget.otherMonthly) + storageMonthly + universityMonthly;
   const knownFamilyPayment = nonnegative(familyLoan.monthlyPayment);
   const existingDebt = nonnegative(s.budget.existingDebtMonthly);
   const familyExistingDebt = nonnegative(s.budget.familyExistingDebtMonthly);
@@ -786,6 +818,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   if(s.budget.propertyCostsEstimated)warnings.push('Se incluyen importes orientativos de IBI, residuos o comunidad: son una provisión de presupuesto, no un máximo. Sustitúyelos por los recibos y comprueba también posibles derramas.');
   const incomplete = !familyTermsKnown || !motherTransfer.termsKnown || motherTransfer.costsIncomplete || unquotedProducts.length > 0 || homeQuoteMissing || actualRegularIncome === 0 || missingEstimates.length > 0;
   const budget = {
+    asOfMonth, universityMonthly,
     regularIncome, averagedIncome, familyIncomeMonthly: familyIncome,
     householdRegularIncome, householdAveragedIncome, householdIncomeRows,
     actualRegularIncome, actualAveragedIncome, extraPaysAnnual: (actualAveragedIncome - actualRegularIncome) * 12,

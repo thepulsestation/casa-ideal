@@ -1115,3 +1115,96 @@ test('property provisions count once but never imply that municipal and communit
  assert.ok(!checked.budget.missingEstimates.some(x=>x.includes('sin comprobar')));
  for(const budget of [{propertyCostsEstimated:'yes'},{propertyCostsConfirmed:null},{ibiLiquidableBase:-1},{ibiRatePercent:101},{propertyCostsEstimated:true,propertyCostsConfirmed:true}])assert.equal(calculateScenario({budget}).valid,false);
 });
+
+const universityExample = () => normalizeScenario({
+  purchasePrice: 180000,
+  familyPlan: {university: {amount: 400.5, startMonth: null, endMonth: '2027-06'}},
+  budget: {
+    incomes: [{monthly: 2100, payments: 14}, {monthly: 1400, payments: 14}],
+    householdIncomes: [{id: 'mother', monthly: 1200, payments: 14}, {id: 'sister', monthly: 0, payments: 12}],
+    existingDebtMonthly: 260, foodMonthly: 450, carMonthly: 100, storageMonthly: 50,
+    utilitiesMonthly: 200,
+  },
+});
+
+test('university is a current household expense once and does not change borrower bank debt', () => {
+  const s = universityExample();
+  const withTuition = calculateScenario(s, {asOfMonth: '2026-10'});
+  const withoutTuition = calculateScenario({...s, familyPlan: {university: {amount: 0}}}, {asOfMonth: '2026-10'});
+  assert.equal(withTuition.valid, true);
+  assert.equal(withTuition.budget.asOfMonth, '2026-10');
+  assert.equal(withTuition.budget.universityMonthly, 400.5);
+  assert.equal(withTuition.budget.householdMonthly, 1000.5);
+  close(withTuition.budget.totalMonthly - withoutTuition.budget.totalMonthly, 400.5);
+  close(withTuition.budget.currentComparable - withoutTuition.budget.currentComparable, 400.5);
+  close(withoutTuition.budget.remainingRegular - withTuition.budget.remainingRegular, 400.5);
+  close(withoutTuition.budget.currentRemainingRegular - withTuition.budget.currentRemainingRegular, 400.5);
+  assert.equal(withTuition.budget.existingDebtMonthly, 260);
+  assert.equal(withTuition.budget.borrowerDebtMonthly, withoutTuition.budget.borrowerDebtMonthly);
+  assert.equal(withTuition.budget.debtRatio, withoutTuition.budget.debtRatio);
+  assert.equal(withTuition.budget.totalDebtMonthly, withoutTuition.budget.totalDebtMonthly);
+  assert.equal(withTuition.budget.allInDifference, withoutTuition.budget.allInDifference);
+});
+
+test('university ends after its inclusive final month and starts in its inclusive first month', () => {
+  const s = universityExample();
+  s.familyPlan.university.startMonth = '2026-11';
+  for (const [month, expected] of [['2026-10', 0], ['2026-11', 400.5], ['2027-06', 400.5], ['2027-07', 0]]) {
+    const r = calculateScenario(s, {asOfMonth: month});
+    assert.equal(r.valid, true);
+    assert.equal(r.budget.universityMonthly, expected, month);
+    assert.equal(r.budget.householdMonthly, 600 + expected, month);
+    assert.equal(r.budget.existingDebtMonthly, 260, month);
+  }
+});
+
+test('tuition is included in the rental-plus-mother-loan waiting budget without becoming a purchase expense', () => {
+  const s = universityExample();
+  s.familyLoan = {...s.familyLoan, enabled: true, rate: 6, years: 8};
+  s.motherTransfer = {...s.motherTransfer, familyRate: 0, familyYears: 8};
+  s.cash = {...s.cash, preClosingLoanPayments: 2, familyLoanAvailableBeforeDeposit: true};
+  const withTuition = calculateScenario(s, {asOfMonth: '2027-06'});
+  const afterTuition = calculateScenario(s, {asOfMonth: '2027-07'});
+  assert.equal(withTuition.valid, true);
+  assert.equal(withTuition.preclosing.requestedInstallments, 2);
+  close(withTuition.preclosing.monthlyOutflow - afterTuition.preclosing.monthlyOutflow, 400.5);
+  close(afterTuition.preclosing.monthlyRemaining - withTuition.preclosing.monthlyRemaining, 400.5);
+  assert.equal(withTuition.familyLoan.principal, afterTuition.familyLoan.principal);
+  assert.equal(withTuition.cash.totalRequired, afterTuition.cash.totalRequired);
+  assert.equal(withTuition.budget.borrowerDebtMonthly, afterTuition.budget.borrowerDebtMonthly);
+});
+
+test('future sister employment is not included in present household income by the core calculator', () => {
+  const s = universityExample();
+  s.familyPlan.sisterJob = {enabled: true, amount: 500, startMonth: '2027-01'};
+  const before = calculateScenario(s, {asOfMonth: '2026-10'});
+  const future = calculateScenario(s, {asOfMonth: '2027-02'});
+  assert.equal(before.budget.householdRegularIncome, 1200);
+  assert.equal(future.budget.householdRegularIncome, 1200);
+  assert.equal(before.budget.regularIncome, 3500);
+  assert.equal(future.budget.regularIncome, 3500);
+});
+
+test('invalid explicit university data cannot silently become a confirmed zero expense', () => {
+  for (const university of [null, [], '400', {amount: null}, {amount: ''}, {amount: -1}, {amount: 'bad'},
+    {amount: 400}, {amount: 400, endMonth: '2027-13'}, {amount: 400, endMonth: '2027-06-30'},
+    {amount: 400, endMonth: '2027-06', startMonth: '2027-07'},
+    {amount: 0, endMonth: ''}, {amount: 0, startMonth: '2027-00'}]) {
+    const r = calculateScenario({familyPlan: {university}}, {asOfMonth: '2026-10'});
+    assert.equal(r.valid, false, JSON.stringify(university));
+    assert.ok(r.validation.errors.some(error => /universidad/i.test(error)), JSON.stringify(university));
+  }
+  for (const familyPlan of [null, [], 'invalid']) assert.equal(calculateScenario({familyPlan}).valid, false);
+});
+
+test('a legacy scenario without tuition remains valid and an invalid reference month is rejected', () => {
+  const legacy = calculateScenario();
+  assert.equal(legacy.valid, true);
+  assert.equal(legacy.budget.universityMonthly, 0);
+  assert.match(legacy.budget.asOfMonth, /^\d{4}-(0[1-9]|1[0-2])$/);
+  for (const asOfMonth of [null, '', '2026-13', '2026-10-19', 202610]) {
+    const r = calculateScenario(universityExample(), {asOfMonth});
+    assert.equal(r.valid, false);
+    assert.ok(r.validation.errors.some(error => /mes de referencia/i.test(error)));
+  }
+});
