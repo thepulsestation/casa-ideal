@@ -225,6 +225,49 @@ test('a private link opens the family automatically and remains shareable after 
  assert.ok(app.html.includes('Casa de prueba'));
 });
 
+test('reloading a private purchase route keeps its section and active saved home',async()=>{
+ const house=savedHome('open-home');
+ const app=boot({hash:buildFamilyHash('compra',CODE),joined:true,draft:house,draftMeta:{id:house.id,dirty:false},scenarios:[house,savedHome('other-home')]});await app.loading;
+ assert.equal(app.draft().id,'open-home');
+ assert.ok(app.location.hash.startsWith('#compra?'));
+ assert.ok(app.location.hash.includes('vivienda=open-home'));
+ assert.ok(app.html.includes('Precio, tasación y financiación'));
+});
+
+test('an explicit private home opens in its requested section on a fresh device',async()=>{
+ const app=boot({hash:buildFamilyHash('compra',CODE,'second-home'),scenarios:[savedHome('first-home'),savedHome('second-home')]});await app.loading;
+ assert.equal(app.draft().id,'second-home');
+ assert.ok(app.location.hash.startsWith('#compra?'));
+ assert.ok(app.location.hash.includes('vivienda=second-home'));
+});
+
+test('automatic family access preserves global sections with several saved homes',async()=>{
+ for(const view of ['presupuesto','fuentes','comparativa']){
+  const app=boot({hash:buildFamilyHash(view,CODE),scenarios:[savedHome('one'),savedHome('two')]});await app.loading;
+  assert.ok(app.location.hash.startsWith('#'+view+'?'));
+ }
+});
+
+test('a reloaded property route keeps pending edits to that same home',async()=>{
+ const home=savedHome('edited-home'),draft={...home,name:'Nombre pendiente'};
+ const app=boot({hash:buildFamilyHash('compra',CODE,home.id),draft,draftMeta:{id:home.id,dirty:true},scenarios:[home]});await app.loading;
+ assert.equal(app.draft().name,'Nombre pendiente');
+ assert.ok(app.location.hash.startsWith('#compra?'));
+});
+
+test('a private route never replaces another home with unsaved edits',async()=>{
+ const home=savedHome('local-edits'),draft={...home,name:'No descartar'};
+ const app=boot({hash:buildFamilyHash('compra',CODE,'requested-home'),draft,draftMeta:{id:home.id,dirty:true},scenarios:[home,savedHome('requested-home')]});await app.loading;
+ assert.equal(app.draft().id,home.id);assert.equal(app.draft().name,'No descartar');
+ assert.ok(app.location.hash.startsWith('#viviendas?'));
+});
+
+test('a missing bookmarked home returns to the list without opening a different one',async()=>{
+ const app=boot({hash:buildFamilyHash('compra',CODE,'missing-home'),scenarios:[savedHome('only-existing')]});await app.loading;
+ assert.ok(app.location.hash.startsWith('#viviendas?'));
+ assert.equal(app.draft(),null);
+});
+
 test('a remotely deleted home never reappears from the browser cache after refresh',async()=>{
  const keep={...savedHome('keep'),name:'Piso que se conserva'},removed={...savedHome('removed'),name:'Ejemplo eliminado'};
  const app=boot({hash:'#viviendas',joined:true,scenarios:[keep,removed],localScenarios:[removed]});await app.loading;
@@ -451,7 +494,7 @@ test('the comparison selectors and columns exclude the reserved shared-budget re
  document.querySelectorAll=selector=>selector==='[data-compare]'?[...app.html.matchAll(/<input[^>]*data-compare="([^"]+)"[^>]*>/g)].map(match=>{
   const input=app.node('comparison-'+match[1]);input.dataset={compare:match[1]};input.checked=/\schecked(?:\s|>)/.test(match[0]);return input;
  }):queryAll(selector);
- app.navigate('#comparativa');
+ app.navigate('#viviendas');app.navigate('#comparativa');
  for(const id of [first.id,second.id]){const input=app.node('comparison-'+id);input.checked=true;input.handlers.change();}
  const table=app.html.match(/<table>([\s\S]*?)<\/table>/)?.[1];
  assert.ok(table);assert.ok(table.includes(first.name));assert.ok(table.includes(second.name));
@@ -486,4 +529,20 @@ test('appraisal and waiting fields are editable in the main purchase view and re
  assert.equal(app.server.get('waiting-house').data.cash.preClosingLoanPayments,2);
  assert.equal(app.server.get('waiting-house').data.purchaseCosts.moving,600);
  assert.ok(app.html.includes('Alquiler + préstamo de mamá'));
+});
+
+
+test('reloading the private family section keeps the family section open',async()=>{
+ const home=savedHome('family-page-home');
+ const app=boot({hash:buildFamilyHash('familia',CODE),draft:home,draftMeta:{id:home.id,dirty:false},scenarios:[home]});await app.loading;
+ assert.ok(app.location.hash.startsWith('#familia?'));
+ assert.equal(app.draft().id,home.id);
+});
+
+test('changing only the home in a private purchase route opens the requested saved home',async()=>{
+ const first=savedHome('history-first'),second=savedHome('history-second');
+ const app=boot({hash:buildFamilyHash('compra',CODE,first.id),scenarios:[first,second]});await app.loading;
+ app.navigate(buildFamilyHash('compra',CODE,second.id));
+ assert.equal(app.draft().id,second.id);
+ assert.ok(app.location.hash.startsWith('#compra?'));
 });
