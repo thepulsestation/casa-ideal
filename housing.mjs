@@ -1,5 +1,5 @@
-import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=18';
-import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=18';
+import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=19';
+import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=19';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
@@ -177,7 +177,7 @@ export function createHousingScenario(current = {}, rawDetails = {}) {
   };
   // A family-supplied offer and negotiated hypotheses travel with the family;
   // the amount is resized for the new property instead of copying the old loan.
-  if(source.familyLoan.referenceOffer||source.familyLoan.negotiation) {
+  if(source.familyLoan.referenceOffer||source.familyLoan.negotiation||source.familyLoan.reportedLimit) {
     fresh.familyLoan={...structuredClone(source.familyLoan),enabled:true,amount:null,coverEarlyLiquidity:true};
   }
   // Preserve the real independent family contract, including a chosen 0% rate.

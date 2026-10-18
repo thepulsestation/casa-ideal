@@ -1,5 +1,5 @@
-import {safeImageUrl} from './housing.mjs?v=18';
-import {analyzeHome,rankHomes,getHousingHighlights,HOUSING_SORT_OPTIONS} from './property-analysis.mjs?v=18';
+import {safeImageUrl} from './housing.mjs?v=19';
+import {analyzeHome,rankHomes,getHousingHighlights,HOUSING_SORT_OPTIONS} from './property-analysis.mjs?v=19';
 export const hasBudgetEstimates=(s,r)=>Boolean(r.budget?.propertyCostsEstimated||r.budget?.assumedLoanTerms||r.cash?.purchaseFeesEstimated||r.familyLoan?.termsAssumed||s.familyLoan?.assumedTerms||r.icf?.hypothetical);
 export function renderPropertyGallery(images,name,esc){
  const safe=Array.isArray(images)?images.map(safeImageUrl).filter(Boolean).slice(0,8):[];
@@ -67,16 +67,78 @@ export function renderHousingComparison(rows,{selected,calculateScenario,euro,es
  const homes=rows.filter(row=>choices.has(row.id)).map(row=>analyzeHome(row,{calculateScenario,getCommuteIndicators}));
  const selection=`<section class="card comparison-selection"><h2>Elige las viviendas que quieres comparar</h2><div class="comparison-choices">${rows.map(row=>`<label class="compare-controls"><input type="checkbox" data-compare="${esc(row.id)}" ${choices.has(row.id)?'checked':''}>${esc(row.name||'Vivienda sin nombre')}</label>`).join('')}</div><p>${homes.length} ${homes.length===1?'vivienda seleccionada':'viviendas seleccionadas'} · mínimo 2.</p></section>`;
  if(homes.length<2)return selection+'<section class="card empty"><h2>Selecciona al menos dos viviendas.</h2><p>Puedes comparar todas las que necesitéis.</p><button class="button secondary" data-view="viviendas">Volver a las viviendas</button></section>';
+ const metric=(id,label,key,direction='min',extra={})=>({id,label,numeric:home=>home.metrics[key],direction,value:home=>amount(home.metrics[key],euro,esc),...extra});
+ const propertyCost=key=>home=>{
+  if(!home.valid)return null;
+  const value=safeAmount(home.scenario.budget?.[key]);
+  // Unchecked default zeros are unknown costs, not a free property.
+  return value!==null&&value>=0&&(value>0||home.scenario.budget?.propertyCostsConfirmed===true)?value:null;
+ };
+ const propertyRow=(id,label,key)=>({id,label,numeric:propertyCost(key),direction:'min',value:home=>amount(propertyCost(key)(home),euro,esc,{prefix:home.scenario.budget?.propertyCostsConfirmed===true?'':'≈ '})});
+ const initialComparable=home=>home.valid&&home.scenario.purchaseCosts?.brokerQuotePending!==true;
+ const monthlyComparable=home=>home.valid&&!home.incomplete;
+ const status=(label,checked)=>`<span class="comparison-status ${checked?'is-checked':'is-pending'}">${checked?'✓ ':''}${esc(label)}</span>`;
+ const buyerStatus=(home,index)=>{
+  if(home.scenario.tax?.mode==='new')return 'Obra nueva · IVA y AJD';
+  const buyer=home.scenario.tax?.buyers?.[index];
+  if(!buyer||safeAmount(buyer.rate)===null)return status('Por completar',false);
+  const rate=(buyer.rate*100).toLocaleString('es-ES',{maximumFractionDigits:2})+' %';
+  if(buyer.rate>=.1)return esc(rate+' · tarifa general');
+  if(buyer.eligibilityConfirmed===true)return status(rate+' · requisitos comprobados',true);
+  if(buyer.eligibilityAssumed===true)return status(rate+' · hipótesis, sin comprobar',false);
+  return status(rate+' solicitado · sin comprobar; se aplica tarifa general',false);
+ };
+ const insuranceStatus=home=>{
+  if(!home.valid)return status('Por completar',false);
+  const quotes=home.result.budget?.missingQuotes;
+  if(!Array.isArray(quotes))return status('Por completar',false);
+  const missing=quotes.filter(label=>/seguro|protecci[oó]n/i.test(label));
+  return missing.length?status('Pendientes: '+missing.join(', '),false):status('Primas introducidas',true);
+ };
  const values=[
-  ['Precio de vivienda',home=>amount(home.metrics.price,euro,esc,{digits:0})],
-  ['Dinero inicial necesario',home=>amount(home.metrics.totalRequired,euro,esc,{prefix:home.incomplete?'≥ ':''})],
-  ['Capital del préstamo de mamá',home=>amount(home.metrics.motherPrincipal,euro,esc,{prefix:home.incomplete?'≥ ':''})],
-  ['Falta por cubrir',home=>amount(home.metrics.fundingGap,euro,esc)],
-  ['Coste familiar al comprar /mes',home=>monthlyAmount(home,euro,esc)],
-  ['Margen familiar /mes',home=>home.incomplete?'Por completar':amount(home.metrics.remainingMonthly,euro,esc)],
-  ['Referencia de deudas de titulares',home=>esc(ratioLabel(home)+home.debtStatus.label)],
-  ...[0,1,2].map(index=>['08:00 · '+homes[0].commute[index].label,home=>esc(travelLabel(home.commute[index]))]),
-  ['Estado de los datos',home=>!home.valid?'Revisa los datos':home.incomplete?'Pendientes':home.estimated?'Orientativos':'Introducidos'],
+  {section:'La vivienda'},
+  {id:'type',label:'Tipo y ubicación',value:home=>esc([home.scenario.propertyType==='flat'?'Piso':'Casa',home.scenario.listingDetails?.city].filter(Boolean).join(' · '))},
+  metric('price','Precio de vivienda','price','min',{value:home=>amount(home.metrics.price,euro,esc,{digits:0})}),
+  ...[['surface','Metros cuadrados construidos','surfaceM2',' m²'],['bedrooms','Habitaciones','bedrooms',''],['bathrooms','Baños','bathrooms','']].map(([id,label,key,suffix])=>metric(id,label,key,'max',{value:home=>home.metrics[key]===null?'Por completar':esc(home.metrics[key].toLocaleString('es-ES',{maximumFractionDigits:2})+suffix)})),
+  {section:'Dinero para comprar'},
+  metric('initial','Dinero inicial necesario','totalRequired','min',{comparable:initialComparable,value:home=>amount(home.metrics.totalRequired,euro,esc,{prefix:home.incomplete?'≥ ':home.estimated?'≈ ':''})}),
+  {id:'tax',label:'Impuestos de compra',numeric:home=>home.valid?safeAmount(home.result.tax?.total):null,direction:'min',value:home=>amount(home.valid?home.result.tax?.total:null,euro,esc)},
+  metric('mother-capital','Capital del préstamo de mamá','motherPrincipal','min',{comparable:initialComparable,value:home=>amount(home.metrics.motherPrincipal,euro,esc,{prefix:home.incomplete?'≥ ':''})}),
+  metric('funding-gap','Falta por cubrir','fundingGap','min',{comparable:initialComparable}),
+  {section:'Cada mes'},
+  metric('mortgage','Hipoteca /mes','mortgageMonthly'),
+  metric('mother-bank','Cuota bancaria de mamá /mes','motherBankMonthly'),
+  metric('children-repayment','Devolución de los hijos a mamá /mes','childrenRepaymentMonthly'),
+  {id:'mother-term',label:'Plazo bancario de mamá',value:home=>safeAmount(home.scenario.familyLoan?.years)>0?esc(home.scenario.familyLoan.years+' años'):'Por completar'},
+  {id:'mother-rate',label:'TIN bancario de mamá',value:home=>safeAmount(home.scenario.familyLoan?.rate)!==null?esc(home.scenario.familyLoan.rate.toLocaleString('es-ES',{maximumFractionDigits:2})+' %'):'Por completar'},
+  metric('insurance','Seguros /mes','insuranceMonthly','min',{comparable:home=>Array.isArray(home.result.budget?.missingQuotes)&&!home.result.budget.missingQuotes.some(label=>/seguro|protecci[oó]n/i.test(label))}),
+  propertyRow('community','Comunidad / conservación de urbanización /mes','communityMonthly'),
+  propertyRow('ibi','IBI /año','ibiAnnual'),
+  propertyRow('waste','Residuos /año','wasteAnnual'),
+  propertyRow('maintenance','Reserva de mantenimiento /año','maintenanceAnnual'),
+  metric('household-monthly','Coste familiar al comprar /mes','totalMonthly','min',{comparable:monthlyComparable,value:home=>monthlyAmount(home,euro,esc)}),
+  metric('household-margin','Margen familiar /mes','remainingMonthly','max',{comparable:monthlyComparable,value:home=>home.incomplete?amount(home.metrics.remainingMonthly,euro,esc,{prefix:'≤ '}):amount(home.metrics.remainingMonthly,euro,esc)}),
+  {id:'debt-reference',label:'Referencia de deudas de titulares',value:home=>esc(ratioLabel(home)+home.debtStatus.label)},
+  {section:'Transporte público · salida 08:00'},
+  ...[0,1,2].map(index=>({id:'commute-'+index,label:homes[0].commute[index].label,numeric:home=>{const t=home.commute[index];return t.totalMinutesMin===null||t.totalMinutesMax===null?null:(t.totalMinutesMin+t.totalMinutesMax)/2;},direction:'min',value:home=>esc(travelLabel(home.commute[index]))})),
+  {section:'Qué está comprobado en cada vivienda'},
+  ...[0,1].map(index=>({id:'buyer-'+index,label:'ITP · comprador '+(index+1),value:home=>buyerStatus(home,index)})),
+  {id:'icf-status',label:'Requisitos ICF',value:home=>!home.scenario.icf?.enabled?'No se utiliza ICF':status(home.scenario.icf.eligibilityConfirmed===true?'Requisitos comprobados':'Pendientes de comprobar',home.scenario.icf.eligibilityConfirmed===true)},
+  {id:'receipts-status',label:'IBI, residuos y comunidad',value:home=>status(home.scenario.budget?.propertyCostsConfirmed===true?'Recibos e importes comprobados':'Sin comprobar · provisión orientativa',home.scenario.budget?.propertyCostsConfirmed===true)},
+  {id:'purchase-status',label:'Gastos de compra y agencia',value:home=>home.scenario.purchaseCosts?.brokerQuotePending===true?status('Honorarios de agencia pendientes',false):home.result.cash?.purchaseFeesEstimated===true||home.scenario.purchaseCosts?.mode==='provision'?status('Provisión · faltan presupuestos',false):home.valid?'Importes introducidos':'Por completar'},
+  {id:'insurance-status',label:'Presupuestos de seguros',value:insuranceStatus},
+  {id:'loan-status',label:'Condiciones del préstamo de mamá',value:home=>home.scenario.familyLoan?.enabled===false?'No se utiliza':status(home.result.familyLoan?.termsAssumed===true||home.scenario.familyLoan?.assumedTerms===true?'Hipótesis · oferta por confirmar':safeAmount(home.scenario.familyLoan?.rate)===null||!(safeAmount(home.scenario.familyLoan?.years)>0)?'Por completar':'Condiciones introducidas · concesión pendiente',false)},
+  {id:'data-status',label:'Estado de los datos',value:home=>!home.valid?'Revisa los datos':home.incomplete?'Pendientes':home.estimated?'Orientativos':'Introducidos'},
  ];
- return selection+`<section class="card housing-comparison"><h2>Comparación con los mismos conceptos</h2><p>La referencia de deudas elegida en cada cálculo es simulada. Revisad ingresos, gastos y supuestos; no indica aprobación bancaria.</p><div class="table-wrap"><table><thead><tr><th>Concepto</th>${homes.map(home=>`<th class="number">${esc(home.scenario.name||'Vivienda sin nombre')}</th>`).join('')}</tr></thead><tbody>${values.map(([label,value])=>`<tr><td>${esc(label)}</td>${homes.map(home=>`<td class="number">${value(home)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="fine-print">≥: mínimo conocido con datos pendientes. ≈: hipótesis o provisiones. Los minutos aproximados incluyen los supuestos del trayecto anotado; no son tráfico ni horarios en tiempo real.</p><div class="inline-actions">${homes.map(home=>`<button class="button secondary" data-action="load" data-id="${esc(home.scenario.id)}">Abrir ${esc(home.scenario.name||'vivienda')}</button>`).join('')}</div></section>`;
+ const body=values.map(row=>{
+  if(row.section)return `<tr class="comparison-section"><th colspan="${homes.length+1}" scope="colgroup">${esc(row.section)}</th></tr>`;
+  const comparable=homes.map(home=>row.numeric&&(!row.comparable||row.comparable(home))?safeAmount(row.numeric(home)):null);
+  const known=comparable.filter(value=>value!==null),varied=known.length>1&&Math.max(...known)-Math.min(...known)>1e-8;
+  const best=varied?(row.direction==='max'?Math.max(...known):Math.min(...known)):null;
+  return `<tr data-comparison-criterion="${row.id}"><th scope="row">${esc(row.label)}</th>${homes.map((home,index)=>{
+   const favored=best!==null&&comparable[index]!==null&&Math.abs(comparable[index]-best)<1e-8;
+   return `<td class="number${favored?' comparison-best':''}"${favored?' data-comparison-best="true"':''}>${row.value(home)}${favored?`<small class="comparison-advantage">${row.direction==='max'?'↑ Mayor':'↓ Menor'}</small>`:''}</td>`;
+  }).join('')}</tr>`;
+ }).join('');
+ return selection+`<section class="card housing-comparison"><h2>Comparación con los mismos conceptos</h2><p>En verde: el valor más favorable de cada fila entre las cifras comparables. Más metros, habitaciones y margen; menos costes y tiempo. Si empatan o faltan datos comparables, no se destaca un ganador.</p><p>La referencia de deudas elegida en cada cálculo es simulada; no indica aprobación bancaria. Los importes con presupuestos pendientes no ganan por omitir esos gastos.</p><div class="table-wrap"><table><thead><tr><th scope="col">Concepto</th>${homes.map(home=>`<th class="number" scope="col">${esc(home.scenario.name||'Vivienda sin nombre')}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div><p class="fine-print">≥: mínimo conocido con datos pendientes. ≤: margen máximo con lo introducido. ≈: hipótesis o provisiones. IBI, residuos y mantenimiento son importes anuales; el coste mensual los divide entre 12. La devolución de los hijos a mamá es interna y no se suma otra vez al coste familiar. Trayectos: se compara la media del rango total de puerta a puerta; un tramo de tren aislado sigue pendiente.</p><div class="comparison-home-actions">${homes.map(home=>`<div><strong>${esc(home.scenario.name||'Vivienda sin nombre')}</strong><div class="inline-actions"><button class="button secondary" data-action="load" data-id="${esc(home.scenario.id)}">Abrir vivienda</button><button class="button secondary" data-action="edit-commute" data-id="${esc(home.scenario.id)}">Editar trayectos</button></div></div>`).join('')}</div></section>`;
 }

@@ -22,3 +22,16 @@ test('provision is a labelled budget exercise and is not derived from purchase p
 test('IBI numeric overflow is rejected before it can become a persisted null',()=>{
  assert.throws(()=>estimateAnnualIbi(1e308,100),/rango numérico/);
 });
+
+test('municipal notes are tied to the property and do not replace or confirm its user budget',()=>{
+ const helpers={field:()=>'',check:()=>'',notice:t=>t,row:(l,v)=>l+v,euro:n=>String(n)};
+ const s={listingDetails:{city:'Vilafranca del Penedès'},budget:{ibiAnnual:934,wasteAnnual:270,communityMonthly:25,propertyCostsConfirmed:false}};
+ const before=structuredClone(s),html=renderPropertyCosts(s,{},helpers);
+ assert.deepEqual(s,before);assert.ok(html.includes('0,907 % de la base liquidable'));
+ assert.ok(html.includes('295 €/año es una provisión editable'));assert.ok(html.includes('no un recibo ni un máximo'));
+ assert.ok(html.includes('of_26_0.pdf'));assert.ok(html.includes('of_06_0.pdf'));assert.ok(!html.includes('Referencia municipal de Navàs'));
+ const neighborhood=renderPropertyCosts({...s,listingDetails:{city:'Vilafranca del Penedès · Centre Vila'}},{},helpers);
+ assert.ok(neighborhood.includes('0,907 % de la base liquidable'),'a neighborhood in the saved city label must not hide the municipal reference');
+ const elsewhere=renderPropertyCosts({...s,listingDetails:{city:'Otro municipio'}},{},helpers);
+ assert.ok(!elsewhere.includes('0,907 %'));
+});

@@ -147,3 +147,22 @@ test('reference-backed comparison offers only eight and ten bank years and prese
  assert.ok(html.includes('calendario familiar actual es distinto'));
  assert.deepEqual(s,before,'rendering never modifies either contract');
 });
+
+test('the operational cap is editable and a ten-year term does not hide missing purchase capital',()=>{
+ const s=adoptPurchaseProvision(planningScenario());
+ Object.assign(s.familyLoan,{years:8,rate:8,maxAmount:10000,
+  reportedLimit:{maxAmount:10000,maxYears:8,source:'Confirmación de prueba',reportedAt:'2026-10-18'},
+  referenceOffer:{amount:12000,years:8,monthlyPayment:169.64,tin:8,tae:8.30,maxAmount:12000},
+  negotiation:{maxAmount:45000,maxYears:10,openingPercent:0,earlyRepaymentPercent:0,confirmed:false}});
+ const r=calculateScenario(s),html=renderTermPicker(s,r,ui);
+ assert.ok(r.cash.fundingGap>0);
+ assert.ok(html.includes('data-field="familyLoan.maxAmount" value="10000"'));
+ assert.ok(html.includes('Límite actual comunicado por la familia: 10000'));
+ assert.ok(html.includes('Elegir 10 años no cubre esta diferencia'));
+ const longer=calculateScenario({...s,familyLoan:{...s.familyLoan,years:10}});
+ assert.equal(longer.cash.fundingGap,r.cash.fundingGap);
+ assert.equal(longer.familyLoan.principal,r.familyLoan.principal);
+ assert.ok(longer.familyLoan.monthlyPayment<r.familyLoan.monthlyPayment);
+ assert.ok(html.includes('data-years="10"'));
+ assert.ok(!html.includes('data-years="15"'));
+});

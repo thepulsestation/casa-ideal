@@ -193,6 +193,17 @@ test('new property retains the supplied bank reference and an independent zero-i
   assert.equal(fresh.motherTransfer.familyYears,10,'bank term edits do not rewrite family terms');
 });
 
+test('new properties preserve a reported operational cap even without a historical offer',()=>{
+ const current=existing();
+ current.familyLoan={...current.familyLoan,maxAmount:19000,years:8,rate:8,reportedLimit:{maxAmount:19000,maxYears:8,source:'Confirmación de prueba',reportedAt:'2026-10-18'}};
+ const fresh=createHousingScenario(current,details());
+ assert.equal(fresh.familyLoan.maxAmount,19000);
+ assert.equal(fresh.familyLoan.years,8);
+ assert.deepEqual(fresh.familyLoan.reportedLimit,current.familyLoan.reportedLimit);
+ fresh.familyLoan.reportedLimit.maxAmount=1;
+ assert.equal(current.familyLoan.reportedLimit.maxAmount,19000,'reported metadata is detached');
+});
+
 test('partial editing changes metadata without resetting saved financial data or timestamps', () => {
   const current = existing();
   const snapshot = structuredClone(current);

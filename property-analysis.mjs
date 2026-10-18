@@ -1,4 +1,4 @@
-import {getCommuteIndicators as defaultCommuteIndicators} from './commute.mjs?v=18';
+import {getCommuteIndicators as defaultCommuteIndicators} from './commute.mjs?v=19';
 
 export const HOUSING_SORT_OPTIONS=Object.freeze([
  ['favorites','Favoritas, después coste mensual'],
@@ -9,6 +9,7 @@ export const HOUSING_SORT_OPTIONS=Object.freeze([
 ]);
 const finite=value=>typeof value==='number'&&Number.isFinite(value)?value:null;
 const nonnegative=value=>{const n=finite(value);return n!==null&&n>=0?n:null;};
+const positive=value=>{const n=finite(value);return n!==null&&n>0?n:null;};
 const DEFAULT_DESTINATIONS=[['sant-joan','Sant Joan Despí'],['elisava','Elisava'],['gran-via','Leonardo Royal']];
 const SORTS=new Set(HOUSING_SORT_OPTIONS.map(([key])=>key));
 
@@ -48,11 +49,18 @@ export function analyzeHome(scenario,{calculateScenario,getCommuteIndicators=def
   estimated:Boolean(valid&&(b.propertyCostsEstimated||b.assumedLoanTerms||result.familyLoan?.termsAssumed||result.icf?.hypothetical||result.cash?.purchaseFeesEstimated)),
   metrics:{
    price:nonnegative(scenario?.purchasePrice)>0?scenario.purchasePrice:null,
+   surfaceM2:positive(scenario?.listingDetails?.surfaceM2),
+   bedrooms:positive(scenario?.listingDetails?.beds),
+   bathrooms:positive(scenario?.listingDetails?.baths),
    totalMonthly:valid?nonnegative(b.totalMonthly):null,
    totalRequired:valid?nonnegative(result.cash?.totalRequired):null,
    motherPrincipal:valid?nonnegative(result.familyLoan?.principal):null,
    fundingGap:valid?nonnegative(result.cash?.fundingGap):null,
    remainingMonthly:valid?finite(b.remainingRegular):null,
+   mortgageMonthly:valid?nonnegative(b.mortgageOnly??result.mortgage?.monthlyPayment):null,
+   motherBankMonthly:valid?nonnegative(b.motherBankLoanMonthly??result.familyLoan?.monthlyPayment):null,
+   childrenRepaymentMonthly:valid&&b.borrowerDebtRatioIncomplete!==true?nonnegative(b.borrowerFamilyRepaymentMonthly??result.motherTransfer?.familyMonthlyRepayment):null,
+   insuranceMonthly:valid?nonnegative(b.insuranceMonthly):null,
    debtRatio,
    commuteMeanMinutes:completeTravel?commute.reduce((sum,t)=>sum+(t.totalMinutesMin+t.totalMinutesMax)/2,0)/3:null,
   },debtStatus,commute};

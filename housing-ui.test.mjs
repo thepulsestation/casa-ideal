@@ -75,3 +75,74 @@ test('comparison keeps invalid finances pending and gives each scenario its chos
  assert.ok(!html.includes('NaN'));assert.ok(!html.includes('undefined'));
  assert.ok(html.includes('Sant Joan &lt;test&gt;'));
 });
+
+const comparisonRow=(html,id)=>html.match(new RegExp('<tr data-comparison-criterion="'+id+'">([\\s\\S]*?)<\\/tr>'))?.[1]||'';
+const comparisonCells=(html,id)=>[...comparisonRow(html,id).matchAll(/<td([^>]*)>([\s\S]*?)<\/td>/g)].map(([,attrs,content])=>({best:attrs.includes('comparison-best'),content}));
+test('comparison highlights larger rooms and lower costs per criterion across three homes, including ties',()=>{
+ const rows=['a','b','c'].map(id=>fixture(id));
+ rows.forEach((s,i)=>{
+  s.purchasePrice=[210000,180000,190000][i];
+  s.listingDetails={surfaceM2:[60,90,90][i],beds:[2,3,4][i],baths:[1,2,1][i]};
+  s.calculated.budget={...s.calculated.budget,mortgageOnly:[700,600,650][i],motherBankLoanMonthly:[300,250,280][i],borrowerFamilyRepaymentMonthly:[250,200,220][i],missingQuotes:[],insuranceMonthly:30};
+  s.calculated.cash.totalRequired=[30000,22000,26000][i];
+  s.calculated.familyLoan.principal=[30000,22000,26000][i];
+ });
+ const html=renderHousingComparison(rows,quickOptions);
+ assert.deepEqual(comparisonCells(html,'price').map(c=>c.best),[false,true,false]);
+ assert.deepEqual(comparisonCells(html,'surface').map(c=>c.best),[false,true,true]);
+ assert.deepEqual(comparisonCells(html,'bedrooms').map(c=>c.best),[false,false,true]);
+ assert.deepEqual(comparisonCells(html,'bathrooms').map(c=>c.best),[false,true,false]);
+ for(const id of ['initial','mother-capital','mortgage','mother-bank','children-repayment'])assert.deepEqual(comparisonCells(html,id).map(c=>c.best),[false,true,false],id);
+ assert.deepEqual(comparisonCells(html,'insurance').map(c=>c.best),[false,false,false],'equal figures do not single out a winner');
+ assert.ok(comparisonRow(html,'surface').includes('↑ Mayor'));
+ assert.ok(comparisonRow(html,'mortgage').includes('↓ Menor'));
+ assert.match(html,/data-action="edit-commute" data-id="a"/);
+ assert.match(html,/data-action="edit-commute" data-id="c"/);
+});
+
+test('unknown expenses, unpriced agency fees and incomplete totals cannot win by omitting costs',()=>{
+ const rows=[fixture('pending',{monthly:0,incomplete:true}),fixture('known',{monthly:1600}),fixture('higher',{monthly:1700})];
+ rows.forEach((s,i)=>{
+  s.budget={ibiAnnual:[0,1200,1500][i],communityMonthly:0,propertyCostsConfirmed:false};
+  s.purchaseCosts={brokerQuotePending:i===0};
+  s.calculated.cash.totalRequired=[1,20000,30000][i];
+  s.calculated.budget.remainingRegular=[5000,900,800][i];
+ });
+ const html=renderHousingComparison(rows,quickOptions);
+ for(const id of ['initial','household-monthly','household-margin','ibi'])assert.deepEqual(comparisonCells(html,id).map(c=>c.best),[false,true,false],id);
+ assert.ok(comparisonCells(html,'ibi')[0].content.includes('Por completar'));
+ assert.ok(comparisonCells(html,'household-margin')[0].content.includes('≤ '));
+ assert.deepEqual(comparisonCells(html,'community').map(c=>c.best),[false,false,false]);
+ assert.ok(comparisonRow(html,'purchase-status').includes('Honorarios de agencia pendientes'));
+ assert.ok(comparisonRow(html,'receipts-status').includes('Sin comprobar'));
+ assert.ok(!comparisonRow(html,'receipts-status').includes('is-checked'));
+});
+
+test('comparison exposes each saved buyer checkbox and distinguishes tax hypotheses from reviewed requirements',()=>{
+ const rows=[fixture('checked'),fixture('unchecked'),fixture('assumed')];
+ rows.forEach((s,i)=>{
+  s.tax={mode:'used',buyers:[{rate:.05,eligibilityConfirmed:i===0,eligibilityAssumed:i===2},{rate:.05,eligibilityConfirmed:false,eligibilityAssumed:false}]};
+  s.icf={enabled:true,eligibilityConfirmed:i===0};
+  s.budget={propertyCostsConfirmed:i===0};
+  s.calculated.budget.missingQuotes=i===0?[]:['Seguro de vida'];
+  s.calculated.budget.insuranceMonthly=i===0?30:0;
+ });
+ const html=renderHousingComparison(rows,quickOptions),buyers=comparisonCells(html,'buyer-0');
+ assert.match(buyers[0].content,/5 % · requisitos comprobados/);
+ assert.match(buyers[1].content,/5 % solicitado · sin comprobar; se aplica tarifa general/);
+ assert.match(buyers[2].content,/5 % · hipótesis, sin comprobar/);
+ assert.ok(comparisonCells(html,'buyer-1').every(c=>c.content.includes('sin comprobar')));
+ assert.match(comparisonCells(html,'icf-status')[0].content,/Requisitos comprobados/);
+ assert.match(comparisonCells(html,'icf-status')[1].content,/Pendientes de comprobar/);
+ assert.match(comparisonCells(html,'insurance-status')[1].content,/Pendientes: Seguro de vida/);
+ assert.ok(comparisonCells(html,'insurance').every(c=>!c.best),'a single quoted premium cannot be compared with missing premiums');
+});
+
+test('only full morning trip ranges participate in journey advantages',()=>{
+ const rows=['near','partial','far'].map(id=>fixture(id));
+ const html=renderHousingComparison(rows,{...quickOptions,getCommuteIndicators:s=>[{id:'sant-joan',totalMinutesMin:s.id==='near'?50:s.id==='partial'?10:80,totalMinutesMax:s.id==='near'?70:s.id==='partial'?null:90,mainLegMinutesMin:10,mainLegMinutesMax:10}]});
+ assert.deepEqual(comparisonCells(html,'commute-0').map(c=>c.best),[true,false,false]);
+ assert.ok(comparisonCells(html,'commute-1').every(c=>!c.best));
+ assert.ok(comparisonCells(html,'commute-2').every(c=>!c.best));
+ assert.ok(comparisonRow(html,'commute-0').includes('50–70 min'));
+});

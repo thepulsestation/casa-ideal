@@ -69,3 +69,16 @@ test('hypothetical ICF and purchase fee provisions stay visibly provisional',()=
  const provision=home('provision');provision.calculated.cash.purchaseFeesEstimated=true;
  assert.equal(analyzeHome(provision,options).estimated,true);
 });
+
+test('comparison metrics retain separate bank and internal repayments and unknown listing sizes',()=>{
+ const s=home('metrics');s.listingDetails={surfaceM2:85,beds:3,baths:2};
+ s.calculated.budget={...s.calculated.budget,mortgageOnly:650,motherBankLoanMonthly:250,borrowerFamilyRepaymentMonthly:200,insuranceMonthly:40};
+ const a=analyzeHome(s,options);
+ assert.equal(a.metrics.surfaceM2,85);assert.equal(a.metrics.bedrooms,3);assert.equal(a.metrics.bathrooms,2);
+ assert.equal(a.metrics.mortgageMonthly,650);assert.equal(a.metrics.motherBankMonthly,250);assert.equal(a.metrics.childrenRepaymentMonthly,200);assert.equal(a.metrics.insuranceMonthly,40);
+ const missing=home('missing');missing.listingDetails={surfaceM2:0,beds:NaN,baths:null};
+ const unknown=analyzeHome(missing,options).metrics;
+ for(const key of ['surfaceM2','bedrooms','bathrooms','mortgageMonthly','motherBankMonthly','childrenRepaymentMonthly','insuranceMonthly'])assert.equal(unknown[key],null,key);
+ s.calculated.budget.borrowerDebtRatioIncomplete=true;
+ assert.equal(analyzeHome(s,options).metrics.childrenRepaymentMonthly,null);
+});

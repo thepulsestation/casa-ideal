@@ -6,7 +6,7 @@ import {createHousingScenario,updateHousingDetails} from './housing.mjs';
 
 const listing='https://hub.engelvoelkers.com/es/exposee/f5b1dc73-bc4a-4113-af4b-04d3686692dd';
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const helpers={esc,field:(label,path)=>`<label>${label}<input data-field="${path}"></label>`,select:label=>label,check:label=>label,section:(title,subtitle,body)=>`<section><h2>${title}</h2><p>${subtitle}</p>${body}</section>`,notice:t=>`<p>${t}</p>`};
+const helpers={esc,field:(label,path,options={})=>`<label>${label}<input data-field="${path}">${options.hint||''}</label>`,select:label=>label,check:label=>label,section:(title,subtitle,body)=>`<section><h2>${title}</h2><p>${subtitle}</p>${body}</section>`,notice:t=>`<p>${t}</p>`};
 
 test('Navàs morning estimates include the complete trip from the reference stop and leave finances untouched',()=>{
  const before=normalizeScenario({id:'saved',name:'Piso',url:listing,purchasePrice:175000,budget:{foodMonthly:428,incomes:[{monthly:2000,payments:12}]}});
@@ -54,11 +54,27 @@ test('transit links encode only origin and destination without a key or private 
  assert.equal(u.hash,'');assert.equal(buildTransitLink('','Destino'),null);
 });
 
-test('the route view displays complete morning estimates, folds details and escapes imported text',()=>{
+test('the route view shows editing fields before optional source details and escapes imported text',()=>{
  const s=prepareHousingPresentation(normalizeScenario({url:listing}));s.commute.trips[1].label='<img src=x>';const html=renderCommutes(s,helpers);
  assert.ok(html.includes('Tiempo total'));assert.ok(html.includes('≈ 1 h 50 min – 2 h 10 min'));assert.ok(!html.includes('Sólo el tramo de autobús'));assert.ok(html.includes('Llegar previamente a la parada no está incluido'));assert.ok(html.includes('<details'));assert.ok(!html.includes('<img src=x>'));assert.ok(html.includes('&lt;img'));assert.ok(html.includes('no fija esa hora automáticamente'));
  assert.equal(formatTravelTime(62,86),'1 h 2 min – 1 h 26 min');assert.equal(formatTravelTime(null,null),'Por comprobar');
+ assert.ok(html.indexOf('data-field="commute.origin"')<html.indexOf('<details'));
+ for(let i=0;i<3;i++){
+  const card=html.split('<article class="card commute-card">')[i+1];
+  assert.ok(card.indexOf(`data-field="commute.trips.${i}.minutesMin"`)<card.indexOf('<details'));
+  assert.ok(card.indexOf(`data-field="commute.trips.${i}.minutesMax"`)<card.indexOf('<details'));
+ }
+ assert.ok(html.includes('el origen de referencia'));assert.ok(html.includes('No sumamos automáticamente'));
  const facts=renderPropertyFacts(s,helpers);assert.ok(facts.includes('4'));assert.ok(facts.includes('1'));assert.ok(facts.includes('75'));assert.ok(facts.includes('descripción 3'));assert.ok(!facts.includes('data-view="trayectos"'));
+});
+
+test('a partial train leg remains pending in the editing form and never fills a total duration',()=>{
+ const s={listingDetails:{city:'Vilafranca del Penedès'},commute:normalizeCommute({},'Centro de referencia')};
+ Object.assign(s.commute.trips[0],{mainLegMinutesMin:52,mainLegMinutesMax:52,status:'reference'});
+ const before=structuredClone(s),html=renderCommutes(s,helpers);
+ assert.deepEqual(s,before);assert.equal(getCommuteIndicators(s)[0].timeLabel,'Por comprobar');
+ assert.ok(html.includes('Solo tramo de tren o autobús: mínimo'));assert.ok(html.includes('data-field="commute.trips.0.mainLegMinutesMin"'));
+ assert.ok(html.includes('No sustituye ni se suma automáticamente al total'));
 });
 
 test('indicators never substitute a partial leg or an unknown time with zero or a total',()=>{

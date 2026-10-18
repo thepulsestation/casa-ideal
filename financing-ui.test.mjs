@@ -71,6 +71,23 @@ test('legacy plan adoption keeps a known independently agreed zero-interest fami
  assert.equal(next.motherTransfer.familyYears,8);
 });
 
+test('a later reported limit supersedes the historical screenshot without rewriting its TIN or TAE',()=>{
+ const s=normalizeScenario({familyLoan:{enabled:true,maxAmount:19000,years:8,rate:8,
+  reportedLimit:{maxAmount:19000,maxYears:8,source:'Confirmación de prueba',reportedAt:'2026-10-18'},
+  referenceOffer:{amount:20000,years:8,monthlyPayment:282.73,tin:8,tae:8.30,maxAmount:20000},
+  negotiation:{maxAmount:45000,maxYears:10,openingPercent:0,earlyRepaymentPercent:0,confirmed:false}}});
+ const html=renderFamilyLoanReference(s,helpers);
+ assert.ok(html.includes('Límite actual comunicado por la familia: 19000.00'));
+ assert.ok(html.includes('Captura anterior, conservada como referencia'));
+ assert.ok(html.includes('Límite mostrado en esa captura: 20000.00'));
+ assert.ok(html.includes('8,00 %'));assert.ok(html.includes('8,30 %'));
+ assert.ok(html.includes('hasta 45000.00 y 10 años'));
+ assert.ok(!html.includes('Habéis ampliado capital o plazo'));
+ s.familyLoan.maxAmount=25000;
+ assert.ok(renderFamilyLoanReference(s,helpers).includes('Habéis ampliado capital o plazo como hipótesis'));
+ assert.equal(adoptFamilyFinancingPlan(s).familyLoan.maxAmount,25000,'legacy adoption retains an explicitly explored cap');
+});
+
 test('independent family zero-interest repayment explains the real mother contribution and counts one household outflow',()=>{
  const s=adoptFamilyFinancingPlan(normalizeScenario({purchasePrice:175000}));
  Object.assign(s.familyLoan,{amount:20000,rate:8,years:8});

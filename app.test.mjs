@@ -389,6 +389,23 @@ test('the existing Navàs record gains reference journeys and listing facts with
  assert.deepEqual(record.budget,home.budget);
 });
 
+test('the comparison route-edit button opens and edits the selected home rather than the previous draft',async()=>{
+ const first={...savedHome('route-first'),name:'Primera vivienda',listingDetails:{city:'Primer municipio'}};
+ const second={...savedHome('route-second'),name:'Segunda vivienda',listingDetails:{city:'Segundo municipio'}};
+ const app=boot({hash:'#comparativa',joined:true,draft:first,draftMeta:{id:first.id,dirty:false},scenarios:[first,second]});await app.loading;
+ const queryAll=document.querySelectorAll.bind(document);
+ document.querySelectorAll=selector=>selector==='[data-compare]'?[...app.html.matchAll(/<input[^>]*data-compare="([^"]+)"[^>]*>/g)].map(match=>{
+  const input=app.node('comparison-'+match[1]);input.dataset={compare:match[1]};input.checked=/\schecked(?:\s|>)/.test(match[0]);return input;
+ }):queryAll(selector);
+ app.navigate('#viviendas');app.navigate('#comparativa');
+ for(const id of [first.id,second.id]){const input=app.node('comparison-'+id);input.checked=true;input.handlers.change();}
+ await app.node('action-edit-commuteroute-second').handlers.click();
+ assert.equal(app.draft().id,second.id);assert.ok(app.location.hash.startsWith('#trayectos'));
+ const minutes=app.node('field-commute.trips.0.minutesMin');minutes.value='65';minutes.handlers.change({target:minutes});await app.flushTimers();
+ assert.equal(app.server.get(second.id).data.commute.trips[0].minutesMin,65);
+ assert.equal(app.server.get(first.id).data.commute,undefined);
+});
+
 // Shared-profile integration cases: only synthetic incomes and expenses.
 import {FAMILY_PROFILE_ID as PROFILE_TEST_ID,extractFamilyProfile as extractProfileForAppTest} from './family-profile.mjs';
 function profileForAppTest({foodMonthly=400,savings=2500}={}){
