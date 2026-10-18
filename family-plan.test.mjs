@@ -35,6 +35,8 @@ test('family plan defaults contain no private monetary figures and normalization
   plan.university.amount = 1;
   assert.equal(raw.university.amount, 450);
   assert.equal(plan.sisterJob.enabled, false);
+  assert.equal(plan.currentAllocation.enabled, false);
+  assert.equal(plan.currentAllocation.otherCostMode, 'unassigned');
   assert.equal(validateFamilyPlan({}).valid, true);
 });
 
@@ -44,6 +46,9 @@ test('invalid money, dates, modes and nested shapes remain invalid after normali
     {purchaseMonth: '2026-13'}, {motherLoanStartMonth: 'tomorrow'}, {sisterJob: {enabled: 'yes'}},
     {sisterJob: {enabled: true, amount: 400}}, {university: {amount: 450}},
     {university: {amount: 1, startMonth: '2027-07', endMonth: '2027-06'}},
+    {currentAllocation: []}, {currentAllocation: {enabled: 'yes'}}, {currentAllocation: {rentPayer: 'unknown'}},
+    {currentAllocation: {brotherLivingShare: -0.1}}, {currentAllocation: {brotherLivingShare: 1.1}},
+    {currentAllocation: {brotherLivingShare: null}}, {currentAllocation: {otherCostMode: 'unknown'}},
   ]) {
     assert.equal(validateFamilyPlan(raw).valid, false, JSON.stringify(raw));
     assert.equal(validateFamilyPlan(normalizeFamilyPlan(raw)).valid, false, JSON.stringify(raw));
@@ -226,4 +231,109 @@ test('calculating a family calendar never mutates the saved scenario', () => {
   const source = fixture(), before = structuredClone(source);
   calculateFamilyTimeline(source);
   assert.deepEqual(source, before);
+});
+
+test('current actual allocation assigns rent to its payer and living costs only to mother and brother', () => {
+  const source = fixture();
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'unassigned'};
+  const timeline = calculateFamilyTimeline(source), october = timeline.months[0], december = timeline.months[2];
+  assert.equal(october.currentAllocationApplied, true);
+  assert.equal(october.people.buyer1.rent, 1000);
+  assert.equal(october.people.buyer1.food, 0);
+  assert.equal(october.people.buyer1.utilities, 0);
+  for (const role of ['buyer2', 'mother']) {
+    assert.equal(october.people[role].rent, 0);
+    assert.equal(october.people[role].food, 200);
+    assert.equal(october.people[role].utilities, 100);
+  }
+  assert.equal(october.people.sister.common, 0);
+  assert.equal(october.people.sister.remaining, 0);
+  assert.equal(october.people.buyer1.fixedPersonalDebt, 200);
+  assert.equal(october.people.buyer2.university, 450);
+  assert.equal(october.household.common, 1600);
+  assert.equal(december.currentAllocationApplied, false);
+  assert.equal(december.people.buyer1.rent, 0);
+  assert.equal(october.bankDebtRatio, calculateFamilyTimeline(fixture()).months[0].bankDebtRatio);
+});
+
+test('unassigned current costs remain in the household once without inventing a personal payer', () => {
+  const source = fixture();
+  source.budget.carMonthly = 90.01; source.budget.storageMonthly = 9.02;
+  source.familyPlan.sharedCostMode = 'workers';
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'unassigned'};
+  const timeline = calculateFamilyTimeline(source), october = timeline.months[0];
+  assert.equal(october.hasUnassignedExpenses, true);
+  assert.equal(october.household.unassignedExpenses, 99.03);
+  assert.equal(october.household.commonOther, 99.03);
+  assert.equal(timeline.incomplete, true);
+  assert.ok(timeline.warnings.some(warning => warning.includes('sin pagador asignado')));
+  for (const person of Object.values(october.people)) assert.equal(person.commonOther, 0);
+  for (const row of timeline.months) {
+    close(Object.values(row.people).reduce((sum, person) => sum + person.expenses, 0) + row.household.unassignedExpenses - row.household.internalTransfers, row.household.expenses, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.remaining, 0) - row.household.unassignedExpenses, row.household.remaining, .001);
+    for (const person of Object.values(row.people)) close(person.rent + person.food + person.utilities + person.commonOther, person.common, .001);
+  }
+  assert.equal(timeline.months[2].hasUnassignedExpenses, false);
+  assert.equal(timeline.months[2].household.unassignedExpenses, 0);
+});
+
+test('worker shares are equal among positive ordinary incomes and update when a job begins', () => {
+  const source = fixture(); source.familyPlan.sharedCostMode = 'workers';
+  const timeline = calculateFamilyTimeline(source), december = timeline.months[2], january = timeline.months[3];
+  assert.equal(december.people.sister.common, 0);
+  // Each separate bill conserves cents; summing several bills can differ by
+  // a few cents from rounding the aggregate once.
+  for (const role of ['buyer1', 'buyer2', 'mother']) close(december.people[role].common, december.household.common / 3, .031);
+  for (const person of Object.values(january.people)) close(person.common, january.household.common / 4, .031);
+  source.familyPlan.sisterJob.enabled = false;
+  assert.equal(calculateFamilyTimeline(source).months[3].people.sister.common, 0);
+  source.budget.incomes[1].monthly = 0;
+  const unemployedBrother = calculateFamilyTimeline(source).months[2];
+  assert.equal(unemployedBrother.people.buyer2.common, 0);
+  close(unemployedBrother.people.buyer1.common, unemployedBrother.household.common / 2, .031);
+  close(unemployedBrother.people.mother.common, unemployedBrother.household.common / 2, .031);
+});
+
+test('current food split and explicitly assigned other bills conserve every cent', () => {
+  const source = fixture(); source.budget.foodMonthly = 400.01; source.budget.utilitiesMonthly = 200.02; source.budget.carMonthly = 90.01;
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .3, otherCostMode: 'mother'};
+  for (const mode of ['mother', 'buyer1', 'buyer2', 'sister', 'workers', 'income', 'borrowers', 'equal']) {
+    source.familyPlan.currentAllocation.otherCostMode = mode;
+    const october = calculateFamilyTimeline(source).months[0];
+    assert.equal(october.household.unassignedExpenses, 0);
+    assert.equal(october.hasUnassignedExpenses, false);
+    for (const key of ['rent', 'food', 'utilities', 'commonOther', 'common']) close(Object.values(october.people).reduce((sum, person) => sum + person[key], 0), october.household[key], .001);
+    if (['mother', 'buyer1', 'buyer2', 'sister'].includes(mode)) assert.equal(october.people[mode].commonOther, 90.01);
+    if (mode === 'workers') assert.equal(october.people.sister.commonOther, 0);
+  }
+});
+
+test('a new job before purchase does not silently replace the agreed current bill payers', () => {
+  const source = fixture(); source.familyPlan.sharedCostMode = 'workers';
+  source.familyPlan.purchaseMonth = '2027-03'; source.familyPlan.motherLoanStartMonth = '2027-01';
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'unassigned'};
+  const rows = calculateFamilyTimeline(source).months;
+  const january = rows.find(row => row.month === '2027-01'), march = rows.find(row => row.month === '2027-03');
+  assert.equal(january.people.sister.income, 400);
+  assert.equal(january.currentAllocationApplied, true);
+  assert.equal(january.people.sister.common, 0);
+  assert.equal(january.people.buyer1.rent, 1000);
+  assert.equal(january.people.buyer2.food, 200);
+  assert.equal(january.people.mother.food, 200);
+  assert.equal(march.currentAllocationApplied, false);
+  assert.equal(march.people.buyer1.rent, 0);
+  assert.ok(march.people.sister.common > 0);
+  for (const person of Object.values(march.people)) close(person.common, march.household.common / 4, .031);
+});
+
+test('worker allocation with no incomes stays pending instead of assigning a free household budget', () => {
+  const source = fixture(); source.familyPlan.sharedCostMode = 'workers';
+  source.familyPlan.sisterJob.enabled = false; source.budget.incomes.forEach(row => { row.monthly = 0; });
+  source.budget.householdIncomes.forEach(row => { row.monthly = 0; });
+  const timeline = calculateFamilyTimeline(source), december = timeline.months[2];
+  assert.equal(timeline.valid, true);
+  assert.ok(december.household.common > 0);
+  assert.equal(december.people.buyer1.common, null);
+  assert.equal(december.people.buyer1.remaining, null);
+  assert.ok(timeline.warnings.some(warning => warning.includes('Sin ninguna persona con ingresos')));
 });

@@ -626,3 +626,19 @@ test('an invalid university date can be repaired without losing the shared plan'
  assert.equal(app.server.get(profile.id).data.familyPlan.university.endMonth,'2027-05');
  assert.ok(app.html.includes('Qué paga cada uno'));
 });
+
+test('current payer controls and month shortcuts preserve the future plan and save the allocation',async()=>{
+ const home=savedHome('current-payers');home.budget.currentRent=900;home.budget.foodMonthly=300;home.cash.preClosingLoanPayments=2;
+ home.familyPlan={sharedCostMode:'workers',currentAllocation:{enabled:true,rentPayer:'buyer1',brotherLivingShare:.5,otherCostMode:'unassigned'}};
+ const profile={...extractFamilyProfile(home),createdAt:home.createdAt,updatedAt:home.updatedAt};
+ const app=boot({hash:buildFamilyHash('reparto',CODE,home.id),scenarios:[home,profile]});await app.loading;
+ const shortcuts=[...app.html.matchAll(/data-action="plan-month" data-id="([^"]+)"/g)].map(match=>match[1]);
+ assert.equal(shortcuts.length,2);assert.ok(app.html.includes('data-field="familyPlan.currentAllocation.brotherLivingShare"'));
+ await app.node('action-plan-month'+shortcuts[1]).handlers.click();
+ assert.ok(app.html.includes('Vivienda comprada'));
+ assert.equal(app.requests.filter(request=>request.method==='PATCH').length,0,'viewing another month does not save financial data');
+ const share=app.node('field-familyPlan.currentAllocation.brotherLivingShare');share.value='60';await share.handlers.change({target:share});await app.flushTimers();
+ const saved=app.server.get(profile.id).data.familyPlan;
+ assert.equal(saved.currentAllocation.brotherLivingShare,.6);assert.equal(saved.currentAllocation.rentPayer,'buyer1');
+ assert.equal(saved.sharedCostMode,'workers');assert.equal(saved.currentAllocation.otherCostMode,'unassigned');
+});

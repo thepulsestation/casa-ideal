@@ -1,4 +1,4 @@
-import {safeImageUrl} from './housing.mjs?v=20';
+import {safeImageUrl} from './housing.mjs?v=21';
 
 let nextGalleryId=0;
 

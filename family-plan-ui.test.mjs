@@ -17,7 +17,9 @@ test('the allocation view prominently separates missing purchase capital from mo
  const html=renderFamilyPlan(scenario,result,helpers);
  assert.ok(html.includes('Faltan 2500.00 € para la compra o sus pagos previos'));
  assert.ok(html.includes('hipótesis hasta resolver el dinero inicial'));
- assert.ok(!html.includes('<option value="mother"'),'borrower debt cannot be moved to a non-borrower through this selector');
+ const personalDebtSelector=html.match(/<select data-field="familyPlan.personalDebtOwner">(.*?)<\/select>/s)?.[1];
+ assert.ok(personalDebtSelector);
+ assert.ok(!personalDebtSelector.includes('<option value="mother"'),'borrower debt cannot be moved to a non-borrower through its selector');
 });
 
 test('monthly view defaults to the first owning month, with a local month selector and all four people', () => {
@@ -86,4 +88,87 @@ test('month labels use Spanish names and reject malformed dates', () => {
   assert.equal(familyPlanMonthLabel('2027-01'), 'enero de 2027');
   assert.equal(familyPlanMonthLabel('2027-13'), 'Fecha pendiente');
   assert.equal(familyPlanMonthLabel('<bad>'), 'Fecha pendiente');
+});
+
+test('current rent and living roles are editable separately from equal sharing between future earners', () => {
+  const {scenario, result} = fixture();
+  result.plan.sharedCostMode = 'workers';
+  result.plan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'unassigned'};
+  result.months[0].currentAllocationApplied = true;
+  const html = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2026-12'});
+  assert.match(html, /Mientras seguís de alquiler · hasta el mes de compra/);
+  assert.match(html, /data-field="familyPlan.currentAllocation.enabled" checked/);
+  assert.match(html, /data-field="familyPlan.currentAllocation.rentPayer"><option value="buyer1" selected/);
+  assert.match(html, /data-scale="100" data-field="familyPlan.currentAllocation.brotherLivingShare" value="50"/);
+  assert.match(html, /value="unassigned" selected/);
+  assert.match(html, /data-field="familyPlan.sharedCostMode"><option value="workers" selected>Entre quienes tienen ingresos/);
+  assert.match(html, /reparto actual no cambia automáticamente antes de comprar/);
+  assert.match(html, /Mes de alquiler: se usa vuestro reparto actual/);
+  assert.match(html, /Después de comprar · gastos comunes/);
+  const owning = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2027-01'});
+  assert.match(owning, /Quien no cobra no tiene parte asignada/);
+});
+
+test('an enabled current allocation opens the current rental month and offers explicit phase shortcuts', () => {
+  const {scenario, result} = fixture();
+  result.plan.currentAllocation = {enabled: true};
+  const html = renderFamilyPlan(scenario, result, helpers);
+  assert.match(html, /value="2026-12" selected/);
+  assert.match(html, /data-action="plan-month" data-id="2026-12" aria-pressed="true">Ahora · alquiler/);
+  assert.match(html, /data-action="plan-month" data-id="2027-01" aria-pressed="false">Después de comprar/);
+  const future = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2027-07'});
+  assert.match(future, /value="2027-07" selected/);
+  result.months = result.months.filter(row => row.phase !== 'renting');
+  const alreadyOwns = renderFamilyPlan(scenario, result, helpers);
+  assert.doesNotMatch(alreadyOwns, /data-action="plan-month"/);
+});
+
+test('component breakdown shows rent, food, utilities and other costs without adding the common subtotal twice', () => {
+  const {scenario, result} = fixture();
+  result.months[0].currentAllocationApplied = true;
+  for (const id of ids) Object.assign(result.months[0].people[id], {rent: 0, food: 0, utilities: 0, commonOther: 0});
+  Object.assign(result.months[0].people.buyer1, {rent: 650, fixedPersonalDebt: 70});
+  Object.assign(result.months[0].people.buyer2, {food: 200, utilities: 80, university: 350});
+  Object.assign(result.months[0].people.mother, {food: 200, utilities: 80, commonOther: 90});
+  const html = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2026-12'});
+  const rent = html.match(/<th scope="row">Alquiler actual<\/th>(.*?)<\/tr>/s)?.[1];
+  const food = html.match(/<th scope="row">Comida<\/th>(.*?)<\/tr>/s)?.[1];
+  const utilities = html.match(/<th scope="row">Suministros<\/th>(.*?)<\/tr>/s)?.[1];
+  assert.equal(rent, '<td class="number">650.00 €</td><td class="number">0.00 €</td><td class="number">0.00 €</td><td class="number">0.00 €</td>');
+  assert.equal(food, '<td class="number">0.00 €</td><td class="number">200.00 €</td><td class="number">200.00 €</td><td class="number">0.00 €</td>');
+  assert.equal(utilities, '<td class="number">0.00 €</td><td class="number">80.00 €</td><td class="number">80.00 €</td><td class="number">0.00 €</td>');
+  assert.match(html, /<th scope="row">Otros gastos comunes<\/th>/);
+  assert.doesNotMatch(html, /<th scope="row">Gastos comunes asignados<\/th>/);
+  const legacy = fixture();
+  assert.match(renderFamilyPlan(legacy.scenario, legacy.result, helpers), /<th scope="row">Gastos comunes asignados<\/th>/);
+});
+
+test('unallocated current costs are already in the household and individual figures are clearly only upper bounds', () => {
+  const {scenario, result} = fixture();
+  result.months[0].hasUnassignedExpenses = true;
+  result.months[0].household.unassignedExpenses = 90;
+  const html = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2026-12'});
+  assert.match(html, /Faltan por asignar 90.00 € de otros gastos actuales/);
+  assert.match(html, /El hogar ya los descuenta, pero las tarjetas individuales todavía no/);
+  assert.equal((html.match(/MÁXIMO PROVISIONAL · FALTA REPARTIR GASTOS/g) || []).length, 4);
+  assert.match(html, /<button type="button" class="card-link" data-action="plan-other-costs">Asignar otros gastos actuales<\/button>/);
+  assert.match(html, /<select id="family-plan-other-costs"/);
+  assert.match(html, /Incluido en gastos · sin pagador todavía/);
+  assert.match(html, /90.00 € del hogar · falta elegir quién los paga/);
+  assert.match(html, /En los meses con gastos sin asignar, las cifras personales son un máximo provisional/);
+  assert.match(html, /Gastos sin asignar<\/small>/);
+  const owning = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2027-01'});
+  assert.doesNotMatch(owning, /family-plan-unassigned/);
+  assert.match(owning, /En los meses con gastos sin asignar, las cifras personales son un máximo provisional/);
+});
+
+test('new person and current allocation selectors escape names without exposing invalid mode values', () => {
+  const {scenario, result} = fixture();
+  result.persons[0].label = '<img src=x onerror=bad()>';
+  result.plan.currentAllocation = {enabled: true, rentPayer: '<unsafe>', otherCostMode: '<bad>'};
+  const html = renderFamilyPlan(scenario, result, helpers);
+  assert.doesNotMatch(html, /<img|<unsafe>|<bad>/);
+  assert.match(html, /&lt;img src=x onerror=bad\(\)&gt;/);
+  assert.match(html, /value="unassigned" selected/);
+  assert.match(html, /data-field="familyPlan.currentAllocation.rentPayer"><option value="buyer1" selected/);
 });

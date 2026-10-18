@@ -1,4 +1,4 @@
-import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=20';
+import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=21';
 
 // This plan allocates cash between residents. It never changes the bank's
 // definition of debt or silently makes one resident cover another's deficit.
@@ -6,6 +6,7 @@ export const DEFAULT_FAMILY_PLAN = Object.freeze({
   sharedCostMode: 'equal', personalDebtOwner: 'buyer1', personalDebtEndMonth: null,
   university: {amount: 0, startMonth: null, endMonth: null},
   sisterJob: {enabled: false, amount: 0, startMonth: null},
+  currentAllocation: {enabled: false, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'unassigned'},
   purchaseMonth: null, motherLoanStartMonth: null,
 });
 
@@ -24,11 +25,16 @@ export function normalizeFamilyPlan(raw = {}) {
   if (!isRecord(raw)) { errors.push('El reparto familiar debe ser un objeto válido.'); raw = {}; }
   if (Array.isArray(raw._errors)) errors.push(...raw._errors.filter(value => typeof value === 'string'));
   const plan = {...structuredClone(DEFAULT_FAMILY_PLAN), ...structuredClone(raw)};
-  for (const key of ['university', 'sisterJob']) {
+  for (const key of ['university', 'sisterJob', 'currentAllocation']) {
     if (Object.hasOwn(raw, key) && !isRecord(raw[key])) errors.push(`El apartado ${key} debe ser un objeto válido.`);
     plan[key] = {...DEFAULT_FAMILY_PLAN[key], ...(isRecord(raw[key]) ? raw[key] : {})};
   }
-  if (!['income', 'equal', 'borrowers'].includes(plan.sharedCostMode)) errors.push('Elige un reparto común entre cuatro, según ingresos o entre titulares.');
+  if (!['income', 'equal', 'borrowers', 'workers'].includes(plan.sharedCostMode)) errors.push('Elige un reparto común entre cuatro, entre quienes tienen ingresos, según ingresos o entre titulares.');
+  if (typeof plan.currentAllocation.enabled !== 'boolean') errors.push('Indica si se utiliza el reparto actual de alquiler, comida y suministros.');
+  if (!ROLES.includes(plan.currentAllocation.rentPayer)) errors.push('El alquiler actual debe asignarse a una de las cuatro personas.');
+  if (!finite(plan.currentAllocation.brotherLivingShare) || Number(plan.currentAllocation.brotherLivingShare) < 0 || Number(plan.currentAllocation.brotherLivingShare) > 1) errors.push('El porcentaje de comida y suministros del hermano debe estar entre el 0 % y el 100 %.');
+  if (finite(plan.currentAllocation.brotherLivingShare)) plan.currentAllocation.brotherLivingShare = Number(plan.currentAllocation.brotherLivingShare);
+  if (!['unassigned', 'income', 'equal', 'borrowers', 'workers', ...ROLES].includes(plan.currentAllocation.otherCostMode)) errors.push('Elige cómo repartir los demás gastos actuales.');
   if (!['buyer1','buyer2'].includes(plan.personalDebtOwner)) errors.push('La deuda personal de los titulares debe pertenecer a uno de los dos compradores.');
   for (const [value, label] of [[plan.university.amount, 'La cuota universitaria'], [plan.sisterJob.amount, 'El ingreso futuro de la hermana']]) {
     if (!finite(value) || Number(value) < 0) errors.push(`${label} debe ser un importe no negativo.`);
@@ -65,6 +71,10 @@ function allocate(amount, shares) {
   for (let remaining = cents - allocated.reduce((a, b) => a + b, 0), i = 0; remaining > 0; remaining--, i++) allocated[order[i % order.length].index]++;
   return allocated.map(value => value / 100);
 }
+
+const costShares = (mode, incomes) => ROLES.includes(mode) ? ROLES.map(role => role === mode ? 1 : 0) : mode === 'equal' ? [1, 1, 1, 1]
+  : mode === 'borrowers' ? [1, 1, 0, 0]
+  : mode === 'workers' ? incomes.map(income => income > 0 ? 1 : 0) : incomes;
 
 // A planning schedule in cents: the final installment clears the remaining
 // principal instead of adding repeated rounding differences to a 0% contract.
@@ -111,6 +121,8 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
   if (Number(scenario.budget.familyExistingDebtMonthly) > 0) warnings.push('Las otras deudas de convivientes se atribuyen provisionalmente a mamá; confirma su titular.');
   if (Number(scenario.budget.familyIncomeMonthly) > 0) warnings.push('La aportación familiar adicional anterior se atribuye a mamá una sola vez; revisa su origen.');
   if (plan.sharedCostMode === 'equal') warnings.push('Los gastos comunes se dividen entre cuatro incluso si alguien no tiene ingresos. Un saldo negativo necesita una aportación familiar acordada; no se redistribuye automáticamente.');
+  if (plan.sharedCostMode === 'workers') warnings.push('En el reparto general, los gastos comunes se dividen por igual entre quienes tengan ingresos ese mes; una persona sin ingresos no recibe una parte.');
+  if (plan.currentAllocation.enabled) warnings.push('Antes de comprar se aplica vuestro reparto actual: alquiler a su pagador, y comida y suministros entre mamá y el hermano. El reparto de los demás gastos actuales es una hipótesis editable.');
   warnings.push('IBI, residuos, seguros y mantenimiento anuales son provisiones mensuales; las fechas de cobro reales pueden ser distintas.');
   if (calculated.budget.incomplete) warnings.push('El presupuesto conserva importes pendientes de comprobar o cotizar; los saldos no son una aprobación bancaria.');
 
@@ -129,8 +141,11 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
   // The core budget may already include today's university payment. Remove
   // that aggregate before assigning this calendar's payment to its real payer.
   const sharedLife = money(calculated.budget.householdMonthly - Number(calculated.budget.universityMonthly || 0));
-  const currentCommon = total([calculated.budget.currentRent, calculated.budget.currentUtilitiesMonthly, sharedLife, Number(scenario.budget.currentOtherMonthly)]);
-  const ownedCommon = total([calculated.budget.propertyOverheadMonthly, calculated.budget.utilitiesMonthly, sharedLife]);
+  const foodMonthly = money(scenario.budget.foodMonthly), otherLife = money(sharedLife - foodMonthly);
+  const currentCosts = {rent: calculated.budget.currentRent, food: foodMonthly, utilities: calculated.budget.currentUtilitiesMonthly,
+    commonOther: total([otherLife, Number(scenario.budget.currentOtherMonthly)])};
+  const ownedCosts = {rent: 0, food: foodMonthly, utilities: calculated.budget.utilitiesMonthly,
+    commonOther: total([calculated.budget.propertyOverheadMonthly, otherLife])};
   const missingPayments = motherSchedule === null || calculated.motherTransfer.mode === 'family-loan' && calculated.motherTransfer.amount > 0 && transferSchedule === null;
   const rows = Array.from({length: months}, (_, offset) => {
     const month = start + offset, owning = month >= purchase;
@@ -138,8 +153,17 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
     const incomes = incomeRows.map(row => money(Number(row?.monthly || 0)));
     incomes[2] = money(incomes[2] + Number(scenario.budget.familyIncomeMonthly));
     if (plan.sisterJob.enabled && month >= monthIndex(plan.sisterJob.startMonth)) incomes[3] = money(plan.sisterJob.amount);
-    const shares = plan.sharedCostMode === 'equal' ? [1, 1, 1, 1] : plan.sharedCostMode === 'borrowers' ? [1, 1, 0, 0] : incomes;
-    const common = owning ? ownedCommon : currentCommon, commonParts = allocate(common, shares);
+    const shares = costShares(plan.sharedCostMode, incomes), costs = owning ? ownedCosts : currentCosts;
+    const currentAllocationApplied = !owning && plan.currentAllocation.enabled;
+    const livingShares = [0, plan.currentAllocation.brotherLivingShare, 1 - plan.currentAllocation.brotherLivingShare, 0];
+    const rentShares = ROLES.map(role => role === plan.currentAllocation.rentPayer ? 1 : 0);
+    const hasUnassignedMode = currentAllocationApplied && plan.currentAllocation.otherCostMode === 'unassigned';
+    const componentParts = Object.fromEntries(Object.entries(costs).map(([key, amount]) => [key,
+      hasUnassignedMode && key === 'commonOther' ? ROLES.map(() => 0) : allocate(amount,
+        !currentAllocationApplied ? shares : key === 'rent' ? rentShares : key === 'food' || key === 'utilities' ? livingShares : costShares(plan.currentAllocation.otherCostMode, incomes))]));
+    const unassignedExpenses = hasUnassignedMode ? costs.commonOther : 0;
+    const hasUnassignedExpenses = unassignedExpenses === null || unassignedExpenses > 0;
+    const common = total(Object.values(costs)), commonParts = ROLES.map((role, index) => total(Object.values(componentParts).map(parts => parts[index])));
     const mortgage = installmentAt(mortgageSchedule, month - purchase, calculated.mortgage.principal > 0), mortgageParts = allocate(mortgage, [...mortgageShares, 0, 0]);
     const familyRepayment = installmentAt(transferSchedule, month - loanStart, calculated.motherTransfer.mode === 'family-loan' && calculated.motherTransfer.amount > 0);
     const familyParts = allocate(familyRepayment, [...transferShares, 0, 0]);
@@ -149,7 +173,8 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
     const personal = plan.personalDebtEndMonth === null || month <= monthIndex(plan.personalDebtEndMonth) ? money(scenario.budget.existingDebtMonthly) : 0;
     const people = Object.fromEntries(persons.map((person, index) => {
       const fixedPersonalDebt = total([person.id === plan.personalDebtOwner ? personal : 0, person.id === 'mother' ? money(scenario.budget.familyExistingDebtMonthly) : 0]);
-      const entry = {income: incomes[index], common: commonParts[index], fixedPersonalDebt, university: person.id === 'buyer2' ? university : 0,
+      const entry = {income: incomes[index], common: commonParts[index], rent: componentParts.rent[index], food: componentParts.food[index],
+        utilities: componentParts.utilities[index], commonOther: componentParts.commonOther[index], fixedPersonalDebt, university: person.id === 'buyer2' ? university : 0,
         mortgage: mortgageParts[index], familyRepayment: familyParts[index], motherBankPayment: person.id === 'mother' ? motherBankPayment : 0,
         internalReceived: person.id === 'mother' ? familyRepayment : 0, icfRepayment: icfParts[index]};
       entry.expenses = total([entry.common, entry.fixedPersonalDebt, entry.university, entry.mortgage, entry.familyRepayment, entry.motherBankPayment, entry.icfRepayment]);
@@ -160,16 +185,18 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
     const householdIncome = total(incomes), borrowerIncome = money(incomes[0] + incomes[1]);
     const borrowerDebt = total([mortgage, ['buyer1', 'buyer2'].includes(plan.personalDebtOwner) ? personal : 0, familyRepayment, icf]);
     const household = {income: householdIncome, expenses: householdExpenses, remaining: householdExpenses === null ? null : money(householdIncome - householdExpenses),
-      internalTransfers: familyRepayment, common, mortgage, motherBankPayment, fixedPersonalDebt: money(personal + Number(scenario.budget.familyExistingDebtMonthly)), university, icfRepayment: icf};
+      internalTransfers: familyRepayment, common, ...costs, unassignedExpenses, mortgage, motherBankPayment, fixedPersonalDebt: money(personal + Number(scenario.budget.familyExistingDebtMonthly)), university, icfRepayment: icf};
     const motherNetBankCost = motherBankPayment === null || familyRepayment === null ? null : money(motherBankPayment - familyRepayment);
-    return {month: monthString(month), phase, people, household, motherNetBankCost, bankDebtMonthly: borrowerDebt,
+    return {month: monthString(month), phase, currentAllocationApplied, hasUnassignedExpenses, people, household, motherNetBankCost, bankDebtMonthly: borrowerDebt,
       bankDebtRatio: borrowerDebt === null || borrowerIncome <= 0 ? null : borrowerDebt / borrowerIncome,
       needsFamilyTopUp: persons.some(person => people[person.id].remaining !== null && people[person.id].remaining < 0)};
   });
   if (plan.sharedCostMode === 'income' && rows.some(row => row.household.income <= 0)) warnings.push('Sin ingresos no puede calcularse el reparto proporcional; los saldos personales quedan pendientes.');
+  if (rows.some(row => row.household.income <= 0 && row.household.common > 0 && (plan.sharedCostMode === 'workers' || row.currentAllocationApplied && plan.currentAllocation.otherCostMode === 'workers'))) warnings.push('Sin ninguna persona con ingresos no puede repartirse el gasto entre quienes cobran; los saldos correspondientes quedan pendientes.');
+  if (rows.some(row => row.hasUnassignedExpenses)) warnings.push('Hay otros gastos actuales sin pagador asignado. Se cuentan en el total familiar, pero los saldos individuales todavía no descuentan esa parte: no todo ese saldo está disponible para ahorrar.');
   return {valid: true, validation: {valid: true, errors: []}, warnings, plan, persons, months: rows, annualExtras,
     purchaseMonth: monthString(purchase), motherLoanStartMonth: monthString(loanStart), purchaseMonthAssumed: plan.purchaseMonth === null,
     purchaseFundingGap,
-    incomplete: Boolean(calculated.budget.incomplete || missingPayments || plan.sisterJob.enabled || plan.purchaseMonth === null || purchaseFundingGap>.01),
+    incomplete: Boolean(calculated.budget.incomplete || missingPayments || plan.sisterJob.enabled || plan.purchaseMonth === null || purchaseFundingGap>.01 || rows.some(row => row.hasUnassignedExpenses)),
     bankDebtRatio: calculated.budget.debtRatio, bankDebtRatioLimit: calculated.budget.debtRatioLimit};
 }
