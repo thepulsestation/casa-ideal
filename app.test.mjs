@@ -9,7 +9,7 @@ const memory = { values: new Map(), getItem(key) { return this.values.get(key) ?
 let instance=0;
 const shared = id => normalizeScenario({id,name:'Casa de prueba',budget:{incomes:[{monthly:2100,payments:12},{monthly:1700,payments:14}]}});
 const tick = () => new Promise(resolve=>setImmediate(resolve));
-const savedHome=id=>({...shared(id),financingPlanVersion:2,purchasePlanVersion:1,discountBreakdownVersion:1,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-02T00:00:00Z'});
+const savedHome=id=>({...shared(id),financingPlanVersion:2,purchasePlanVersion:1,discountBreakdownVersion:1,preclosingPlanVersion:1,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-02T00:00:00Z'});
 
 // A small DOM substitute tests application wiring; no browser or external network.
 function boot({hash='#resumen',draft=null,joined=false,scenarios=[],signupGate=null,localScenarios=[],draftMeta=null,saveGate=null,failSaves=0,listGate=null}={}) {
@@ -470,4 +470,20 @@ test('purchase fee mode reveals its inputs and fixed arras are wired to the calc
  assert.equal(app.draft().cash.depositAmount,5000);
  depositMode.value='percent';await app.node('deposit-input-mode').handlers.change({target:depositMode});
  assert.equal(app.draft().cash.depositAmount,null);
+});
+
+
+test('appraisal and waiting fields are editable in the main purchase view and remain saved per home',async()=>{
+ const house=savedHome('waiting-house');house.purchasePrice=175000;house.icf.enabled=true;house.purchaseCosts.mode='provision';
+ const app=boot({joined:true,hash:'#compra',scenarios:[house]});await app.loading;
+ assert.equal([...app.html.matchAll(/data-field="appraisalValue"/g)].length,1);
+ assert.ok(app.html.indexOf('data-field="appraisalValue"')<app.html.indexOf('<summary>Precio, impuestos'));
+ const appraisal=app.node('field-appraisalValue');appraisal.value='160000';await appraisal.handlers.change({target:appraisal});
+ assert.equal(app.draft().appraisalValue,160000);assert.ok(app.html.includes('128.000'));
+ const waiting=app.node('field-cash.preClosingLoanPayments');waiting.value='2';await waiting.handlers.change({target:waiting});
+ const moving=app.node('field-purchaseCosts.moving');moving.value='600';await moving.handlers.change({target:moving});
+ await app.flushTimers();
+ assert.equal(app.server.get('waiting-house').data.cash.preClosingLoanPayments,2);
+ assert.equal(app.server.get('waiting-house').data.purchaseCosts.moving,600);
+ assert.ok(app.html.includes('Alquiler + préstamo de mamá'));
 });

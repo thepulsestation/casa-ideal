@@ -1,3 +1,4 @@
+import {calculatePreclosing} from './preclosing.mjs?v=15';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -43,11 +44,11 @@ export const DEFAULT_SCENARIO = Object.freeze({
     ],
   },
   icf: { enabled: false, ltv: 0.2, maxAmount: 50000, repaymentYears: 5, eligibilityConfirmed: false },
-  cash: { savings: 0, depositPercent: 0.1, familyLoanAvailableBeforeDeposit: false, depositFundingMode: 'pending' },
+  cash: { savings: 0, depositPercent: 0.1, preClosingLoanPayments: 0, familyLoanAvailableBeforeDeposit: false, depositFundingMode: 'pending' },
   purchaseCosts: {
     mode: 'itemized', provisionAmount: 5000, provisionBeforeSigning: 0,
     appraisal: 0, legal: 0, notary: 0, registry: 0, agency: 0,
-    broker: 0, other: 0, renovations: 0, reserve: 0,
+    broker: 0, other: 0, renovations: 0, moving: 0, reserve: 0,
   },
   familyLoan: { enabled: false, amount: null, maxAmount: 60000, rate: null, years: null, extraBuffer: 3000, assumedTerms: false, coverEarlyLiquidity: false, originationFeePercent: 0, originationFeeFixed: 0 },
   motherTransfer: {
@@ -78,7 +79,7 @@ export const DEFAULT_SCENARIO = Object.freeze({
   stress: { incomeDropPercent: 10, expenseIncreasePercent: 10, loseDiscounts: true, unexpectedCost: 3000 },
 });
 
-const COST_KEYS = ['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker', 'other', 'renovations', 'reserve'];
+const COST_KEYS = ['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker', 'other', 'renovations', 'moving', 'reserve'];
 const UTILITY_KEYS = ['waterMonthly', 'energyMonthly', 'internetMonthly', 'otherMonthly'];
 const FREQUENCIES = new Set(['monthly', 'quarterly', 'annual', 'upfront']);
 const isNumericPrimitive = (value) => (typeof value === 'number' || typeof value === 'string') && !(typeof value === 'string' && value.trim() === '');
@@ -392,6 +393,8 @@ export function validateScenario(input = {}) {
   numeric(s.mortgage.originationFeePercent, 'Comisión hipotecaria', 0, 100);
   numeric(s.mortgage.originationFeeFixed, 'Comisión hipotecaria fija');
   numeric(s.cash.savings, 'Ahorros');
+  numeric(s.cash.preClosingLoanPayments, 'Cuotas de mamá antes de la firma', 0, 60);
+  if(!Number.isInteger(n(s.cash.preClosingLoanPayments)))errors.push('Las cuotas anteriores a la firma deben ser un número entero.');
   numeric(s.cash.depositPercent, 'Arras', 0, 1);
   if (!['pending', 'offset-confirmed', 'no-release'].includes(s.cash.depositFundingMode)) errors.push('Selecciona si la financiación de las arras está pendiente, compensada o no se libera.');
   if (s.cash.depositAmount != null) numeric(s.cash.depositAmount, 'Importe arras', 0, nonnegative(s.purchasePrice));
@@ -568,7 +571,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   const priceContribution = price - principal - icfPrincipal;
   const familyExtraBuffer = s.familyLoan.enabled ? nonnegative(s.familyLoan.extraBuffer) : 0;
   const totalReserve = cost.reserve + familyExtraBuffer;
-  const beforeFamilyLoanRequired = priceContribution + tax.total + purchaseFees + mortgageOriginationFee + upfrontInsurance + cost.renovations + totalReserve;
+  const beforeFamilyLoanRequired = priceContribution + tax.total + purchaseFees + mortgageOriginationFee + upfrontInsurance + cost.renovations + cost.moving + totalReserve;
   const savings = nonnegative(s.cash.savings);
   const loanFeeRate = nonnegative(s.familyLoan.originationFeePercent) / 100;
   const loanFeeFixed = nonnegative(s.familyLoan.originationFeeFixed);
@@ -637,7 +640,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
   };
   const motherFundingNeed = {
     uncoveredPurchasePrice: priceContribution, purchaseTax: tax.total, purchaseFees,
-    mortgageFees: mortgageOriginationFee, upfrontInsurance, renovations: cost.renovations,
+    mortgageFees: mortgageOriginationFee, upfrontInsurance, renovations: cost.renovations, moving: cost.moving,
     purchaseReserve: cost.reserve, extraBuffer: familyExtraBuffer,
     bankLoanFee: familyLoanFee, giftTax: motherTransfer.giftTax, giftNotaryCost: motherTransfer.notaryCost,
     grossBeforeSavings: totalRequired, savingsUsed: Math.min(savings, totalRequired),
@@ -649,10 +652,10 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     priceContribution, tax: tax.total, purchaseFees, mortgageOriginationFee, upfrontInsurance, familyLoanFee,
     purchaseFeesMode, purchaseFeesEstimated, purchaseFeesItemized, purchaseFeesProvision, prepaidPurchaseFees,
     motherTransferTax: motherTransfer.giftTax, motherTransferCosts: motherTransfer.totalCosts, giftNotaryCost: motherTransfer.notaryCost,
-    renovations: cost.renovations, reserve: cost.reserve, familyExtraBuffer, totalReserve, depositAmount,
+    renovations: cost.renovations, moving: cost.moving, reserve: cost.reserve, familyExtraBuffer, totalReserve, depositAmount,
     beforeMortgageRequired, beforeMortgageAvailable, beforeMortgageGap, closingNetPayment,
     purchasePrice: price, mortgageFunding: principal, icfFunding: icfPrincipal, debtFunding: familyPrincipal,
-    totalAcquisitionCost: price + tax.total + purchaseFees + mortgageOriginationFee + upfrontInsurance + familyLoanFee + motherTransfer.totalCosts + cost.renovations,
+    totalAcquisitionCost: price + tax.total + purchaseFees + mortgageOriginationFee + upfrontInsurance + familyLoanFee + motherTransfer.totalCosts + cost.renovations + cost.moving,
     insuranceFirstPaymentEstimate,
     priceFinancing: financing, motherFundingNeed,
     potentialClosingSurplus: Math.max(0, -closingNetPayment),
@@ -769,6 +772,10 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     allInDifference: totalMonthly - currentComparable,
     incomplete, missingEstimates, missingQuotes: [...unquotedProducts.map((p) => p.label || p.id), ...(homeQuoteMissing ? ['Seguro de hogar externo'] : []), ...(!familyTermsKnown ? ['Condiciones préstamo madre'] : []), ...(!motherTransfer.termsKnown ? ['Calendario préstamo entre madre e hijos'] : [])],
   };
+  const preclosing=calculatePreclosing(s,{budget,familyLoan,cash},amortizeLoan);
+  if(preclosing.additionalCashToKeepBuffer>.01)warnings.push('La espera antes de firmar consumiría dinero reservado para la compra o el colchón. Revisa el presupuesto de alquiler más el préstamo de mamá; ese déficit no aumenta automáticamente el préstamo calculado.');
+  if(preclosing.preclosingLiquidityGap>.01)warnings.push('Después de las arras y pagos previos falta efectivo para la espera. Un excedente previsto al firmar no puede pagar recibos anteriores.');
+  if(!preclosing.timingConsistent)warnings.push('El calendario indica cuotas de mamá antes de la firma, pero el préstamo no figura disponible antes de las arras. Revisa fechas de disposición y pagos.');
   if (actualRegularIncome === 0) warnings.push('Añade ingresos netos para valorar el presupuesto y el endeudamiento.');
   if (debtRatio != null && debtRatio > n(s.budget.debtRatioLimit)) warnings.push('La hipoteca y las deudas de los titulares superan el límite orientativo de endeudamiento elegido.');
   if (s.familyLoan.enabled && familyIncome + householdRegularIncome === 0) warnings.push('El préstamo de la madre se incluye como salida de caja familiar; no se presupone capacidad de pago ni aprobación de la madre.');
@@ -794,9 +801,10 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     incomplete,
   };
   const timeline = [
+    ...(preclosing.requestedInstallments>0?[{id:'waiting',label:'Mientras esperáis la firma',cashOut:preclosing.monthlyOutflow,cashIn:actualRegularIncome,balance:preclosing.monthlyRemaining,note:'Alquiler y gastos actuales más una cuota de mamá; todavía sin hipoteca. Las cuotas ya pertenecen al plazo original del préstamo.'}]:[]),
     { id: 'before', label: 'Antes de la hipoteca', cashOut: beforeMortgageRequired, cashIn: beforeMortgageAvailable, balance: beforeMortgageAvailable - beforeMortgageRequired, note: 'Arras, tasación y asesoramiento; la hipoteca todavía no se desembolsa.' },
-    { id: 'signing', label: 'Firma', cashOut: price - depositAmount + closingCosts, cashIn: principal + icfPrincipal + (s.cash.familyLoanAvailableBeforeDeposit ? 0 : familyPrincipal), balance: savings + familyPrincipal - beforeMortgageRequired - closingNetPayment, note: 'El precio pendiente ya descuenta las arras. Liquidación teórica: fondos ICF, destinatarios y eventual devolución de anticipos sujetos a resolución y desembolsos confirmados.' },
-    { id: 'after', label: 'Después de la firma', cashOut: cost.renovations, cashIn: 0, balance: availableFunds - totalRequired + totalReserve, note: 'Reformas y efectivo restante, que incluye la reserva de compra y el colchón adicional del préstamo.' },
+    { id: 'signing', label: 'Firma', cashOut: price - depositAmount + closingCosts, cashIn: principal + icfPrincipal + (s.cash.familyLoanAvailableBeforeDeposit ? 0 : familyPrincipal), balance: preclosing.deficit==null?null:savings + familyPrincipal - beforeMortgageRequired - closingNetPayment - preclosing.deficit, note: 'El precio pendiente ya descuenta las arras. Liquidación teórica: fondos ICF, destinatarios y eventual devolución de anticipos sujetos a resolución y desembolsos confirmados.' },
+    { id: 'after', label: 'Después de la firma', cashOut: cost.renovations + cost.moving, cashIn: 0, balance: preclosing.deficit==null?null:availableFunds - totalRequired + totalReserve - preclosing.deficit, note: 'Reformas y mudanza previstas. Las reservas no son gastos; revisa aparte si la espera consume parte del colchón.' },
     { id: 'monthly', label: 'Cada mes', cashOut: totalMonthly, cashIn: actualRegularIncome, balance: budget.remainingRegular, note: 'Primas anuales, IBI y mantenimiento se reparten entre 12 como provisión; sus fechas reales de cobro pueden variar.' },
     ...(icfPrincipal ? [{ id: 'icf', label: 'Después de pagar la hipoteca', cashOut: icf.deferredMonthlyPayment, cashIn: 0, balance: null, note: `ICF: devolución sin intereses durante ${icf.repaymentYears} años, según resolución y contrato.` }] : []),
   ];
@@ -813,7 +821,7 @@ export function calculateScenario(input = {}, { includeSchedule = false } = {}) 
     internalFamilyLoanInterest: motherTransfer.repayment?.totalInterest ?? (motherTransfer.termsKnown ? 0 : null),
     internalFamilyLoanExcludedFromConsolidatedDebt: true,
   };
-  return { valid: true, validation, warnings: [...new Set(warnings)], tax, mortgage, familyLoan, motherTransfer, icf, financing, cash, budget, stress, bonuses, timeline, lifetime };
+  return { valid: true, validation, warnings: [...new Set(warnings)], tax, mortgage, familyLoan, motherTransfer, icf, financing, cash, budget, preclosing, stress, bonuses, timeline, lifetime };
 }
 
 /** Explicit hypothetical comparison; never changes the saved scenario or
@@ -876,7 +884,11 @@ export function getAffordability(input = {}, calculatedResult = null) {
   if (r.cash.beforeMortgageGap > 0.01) blockedReasons.push('early-cash-gap');
   if (householdRemaining == null) blockedReasons.push('unknown-household-margin');
   else if (householdRemaining < -0.01) blockedReasons.push('negative-household-margin');
-  const incomplete = b.incomplete || r.icf.hypothetical || r.cash.depositReleasePending;
+  if(r.preclosing.additionalCashToKeepBuffer>.01)blockedReasons.push('preclosing-buffer-shortfall');
+  if(r.preclosing.requestedInstallments>0&&r.preclosing.additionalCashToKeepBuffer==null)blockedReasons.push('unknown-preclosing-budget');
+  if(r.preclosing.preclosingLiquidityGap>.01)blockedReasons.push('preclosing-liquidity-gap');
+  if(!r.preclosing.timingConsistent)blockedReasons.push('inconsistent-preclosing-timing');
+  const incomplete = b.incomplete || r.icf.hypothetical || r.cash.depositReleasePending || r.preclosing.incomplete;
   return {
     valid: true, withinDebtLimit, maximumMotherMonthly: capacityBeforeMother == null ? null : Math.max(0, capacityBeforeMother),
     capacityBeforeMother, capacityAppliesTo: 'internal-family-repayment',
@@ -885,11 +897,12 @@ export function getAffordability(input = {}, calculatedResult = null) {
     mortgageMonthly: r.mortgage.monthlyPayment, existingDebtMonthly: b.existingDebtMonthly,
     motherBankMonthly: r.familyLoan.monthlyPayment, internalRepaymentMonthly: r.motherTransfer.familyMonthlyRepayment,
     cashFundingGap: r.cash.fundingGap, earlyCashGap: r.cash.beforeMortgageGap, householdRemaining,
+    preclosingFundingNeed:r.preclosing.additionalCashToKeepBuffer,preclosingLiquidityGap:r.preclosing.preclosingLiquidityGap,
     depositReleaseAtRisk: r.cash.depositReleaseAtRisk, depositReleasePending: r.cash.depositReleasePending,
     fundingTimingRequiresConfirmation: r.cash.fundingTimingRequiresConfirmation || (r.cash.purchaseFeesEstimated && r.cash.prepaidPurchaseFees === 0),
     incomplete, provisional: incomplete || b.assumedLoanTerms || b.propertyCostsEstimated || r.cash.purchaseFeesEstimated,
     noApproval: true, approvalRequired: true,
-    meetsKnownLimits: withinDebtLimit === true && r.cash.fundingGap <= 0.01 && r.cash.beforeMortgageGap <= 0.01 && householdRemaining != null && householdRemaining >= -0.01,
+    meetsKnownLimits: withinDebtLimit === true && r.cash.fundingGap <= 0.01 && r.cash.beforeMortgageGap <= 0.01 && householdRemaining != null && householdRemaining >= -0.01 && r.preclosing.additionalCashToKeepBuffer!=null && r.preclosing.additionalCashToKeepBuffer<=.01 && r.preclosing.preclosingLiquidityGap!=null && r.preclosing.preclosingLiquidityGap<=.01 && r.preclosing.timingConsistent,
     blockedReasons, errors: [],
   };
 }
