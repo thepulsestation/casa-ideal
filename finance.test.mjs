@@ -1243,3 +1243,30 @@ test('a legacy scenario without tuition remains valid and an invalid reference m
     assert.ok(r.validation.errors.some(error => /mes de referencia/i.test(error)));
   }
 });
+
+
+test('percentage provision follows each price and leaves tax, moving and 3000 buffer separate',()=>{
+ const input={...planningExample(),cash:{depositPercent:0,familyLoanAvailableBeforeDeposit:true},purchaseCosts:{mode:'provision',provisionBasis:'percent',provisionPercent:2,provisionAmount:5000,moving:600,appraisal:1000,vat:{appraisal:{mode:'net',rate:21}}}};
+ for(const [price,fees] of [[175000,3500],[189000,3780],[240000,4800],[123456.78,2469.14]]){
+  const r=calculateScenario({...input,purchasePrice:price});
+  assert.equal(r.valid,true);assert.equal(r.cash.purchaseFees,fees);
+  assert.equal(r.cash.purchaseFeesProvision,fees);assert.equal(r.cash.purchaseFeesVatAdded,0);
+  assert.equal(r.cash.familyExtraBuffer,3000);
+  close(r.familyLoan.principal,r.tax.total+fees+600+3000);
+  close(r.cash.totalAcquisitionCost,price+r.tax.total+fees+600);
+ }
+ const r=calculateScenario(input),staged=calculateScenario({...input,purchaseCosts:{...input.purchaseCosts,provisionBeforeSigning:500}});
+ assert.equal(staged.cash.totalRequired,r.cash.totalRequired);
+ assert.equal(staged.cash.beforeMortgageRequired-r.cash.beforeMortgageRequired,500);
+ assert.equal(staged.cash.closingNetPayment-r.cash.closingNetPayment,-500);
+ const fixed=calculateScenario({...input,purchaseCosts:{...input.purchaseCosts,provisionBasis:'fixed'}});
+ assert.equal(fixed.cash.purchaseFees,5000);
+});
+
+test('percentage provision validates its basis, rate and effective prepaid ceiling',()=>{
+ const costs={mode:'provision',provisionBasis:'percent',provisionPercent:2};
+ assert.equal(calculateScenario({purchasePrice:175000,purchaseCosts:{...costs,provisionBeforeSigning:3500}}).valid,true);
+ for(const override of [{provisionBasis:'unknown'},{provisionPercent:-1},{provisionPercent:101},{provisionPercent:'not-a-rate'},{provisionBeforeSigning:3500.01}]){
+  assert.equal(calculateScenario({purchasePrice:175000,purchaseCosts:{...costs,...override}}).valid,false);
+ }
+});

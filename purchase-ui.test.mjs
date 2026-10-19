@@ -77,7 +77,7 @@ test('the provision remains a final estimate pending confirmation and does not a
  const r={cash:{purchaseFees:5000,purchaseFeesVatAdded:210,costVat:{legal:{vatAdded:210,total:1210}}}};
  const html=renderPurchaseFees(s,r,helpers);
  assert.ok(html.includes('data-field="purchaseCosts.provisionAmount"'));
- assert.ok(html.includes('Falta confirmar con el gestor si su estimación cubre el IVA y todos los conceptos'));
+ assert.ok(html.includes('Confirma los conceptos y el IVA en los presupuestos'));
  assert.ok(html.includes('No se añade otro 21 % sobre toda la provisión'));
  assert.ok(!html.includes('data-field="purchaseCosts.vat.legal.mode"'));
  assert.ok(!html.includes('Incluye 210 de IVA añadido'));
@@ -105,4 +105,38 @@ test('moving and renovations reuse the quote controls with independent VAT paths
  assert.ok(renovations.includes('data-field="purchaseCosts.renovations"'));
  assert.ok(renovations.includes('data-field="purchaseCosts.vat.renovations.mode"'));
  assert.ok(!renovations.includes('data-field="purchaseCosts.vat.renovations.rate"'));
+});
+
+
+test('percentage provision displays the current price and final VAT-inclusive reserve with an editable basis',()=>{
+ for(const price of [175000,189000]){
+  const s=home();s.purchasePrice=price;s.purchaseCosts.provisionBasis='percent';s.purchaseCosts.provisionPercent=2;
+  const r=calculateScenario(s),html=renderPurchaseFees(s,r,helpers);
+  assert.equal(r.cash.purchaseFees,price*.02);
+  assert.ok(html.includes('data-field="purchaseCosts.provisionBasis"'));
+  assert.ok(html.includes('data-field="purchaseCosts.provisionPercent"'));
+  assert.ok(!html.includes('data-field="purchaseCosts.provisionAmount"'));
+  assert.ok(html.includes(`2 % de ${price}: <strong>${price*.02}</strong>, IVA incluido como previsión.`));
+  assert.ok(html.includes('El colchón del préstamo de mamá se reserva aparte.'));
+  assert.ok(html.includes('No se añade otro 21 % sobre toda la provisión.'));
+  assert.equal(s.familyLoan.extraBuffer,3000);
+ }
+});
+
+test('fixed provision remains editable independently of the saved percentage',()=>{
+ const s=home();s.purchaseCosts.provisionBasis='fixed';s.purchaseCosts.provisionAmount=4400;s.purchaseCosts.provisionPercent=2;
+ const html=renderPurchaseFees(s,calculateScenario(s),helpers);
+ assert.ok(html.includes('data-field="purchaseCosts.provisionAmount"'));
+ assert.ok(!html.includes('data-field="purchaseCosts.provisionPercent"'));
+ assert.ok(html.includes('Provisión final: <strong>4400</strong>'));
+});
+
+test('pre-signing fees use the effective percentage provision as their ceiling',()=>{
+ const s=home();s.purchaseCosts.provisionBasis='percent';s.purchaseCosts.provisionPercent=2;
+ const r=calculateScenario(s);
+ const expected='data-field="purchaseCosts.provisionBeforeSigning" aria-label="De la provisión de gastos, pagar antes de firmar" max="3500"';
+ assert.ok(renderDepositInputs(s,helpers,r).includes(expected));
+ assert.ok(renderDepositInputs(s,helpers).includes(expected));
+ s.purchasePrice=250000;
+ assert.ok(renderDepositInputs(s,helpers,calculateScenario(s)).includes('max="5000"'));
 });

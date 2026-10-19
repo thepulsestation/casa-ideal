@@ -18,30 +18,45 @@ test('purchase-plan adoption supplies a single provision and funds the earlier a
   const next = adoptPurchaseProvision(previous);
   assert.deepEqual(previous, snapshot);
   assert.equal(next.purchasePlanVersion, 1);
+  assert.equal(next.purchaseProvisionVersion, 1);
   assert.equal(next.purchaseCosts.mode, 'provision');
   const r = calculateScenario(next);
-  assert.equal(r.cash.purchaseFees, 5000);
-  assert.equal(r.cash.totalRequired, 16750);
+  assert.equal(r.cash.purchaseFees, 3500);
+  assert.equal(r.cash.totalRequired, 15250);
   assert.equal(r.familyLoan.principal, 17500);
   assert.equal(r.cash.beforeMortgageRequired, 17500);
   assert.equal(r.cash.beforeMortgageGap, 0);
   assert.equal(r.cash.fundingGap, 0);
-  assert.equal(r.cash.earlyLiquidityExtraBorrowing, 750);
-  assert.equal(r.cash.totalAcquisitionCost, 188750);
+  assert.equal(r.cash.earlyLiquidityExtraBorrowing, 2250);
+  assert.equal(r.cash.totalAcquisitionCost, 187250);
 });
 
-test('already itemized purchase fees stay itemized and do not acquire another 5000 euros', () => {
+test('all older studies adopt 2% while retaining itemized quotes for an explicit later choice', () => {
   const s = planningScenario();
   Object.assign(s.purchaseCosts, { appraisal: 450, legal: 550, notary: 900 });
   const next = adoptPurchaseProvision(s);
   const r = calculateScenario(next);
-  assert.equal(next.purchaseCosts.mode, 'itemized');
-  assert.equal(r.cash.purchaseFees, 1900);
-  assert.equal(r.cash.prepaidPurchaseFees, 1000);
-  assert.equal(r.cash.totalRequired, 13650);
-  assert.equal(r.familyLoan.principal, 18500, 'timing can require extra liquidity without making it an acquisition expense');
-  assert.equal(r.cash.earlyLiquidityExtraBorrowing, 4850);
-  assert.equal(next.purchaseCosts.provisionAmount, 5000, 'the inactive reference is preserved but not added');
+  assert.equal(next.purchaseCosts.mode, 'provision');
+  assert.equal(next.purchaseCosts.provisionBasis, 'percent');
+  assert.equal(next.purchaseCosts.provisionPercent, 2);
+  assert.equal(r.cash.purchaseFees, 3500);
+  assert.equal(r.cash.purchaseFeesItemized, 1900);
+  assert.equal(r.cash.prepaidPurchaseFees, 0);
+  assert.equal(r.cash.totalRequired, 15250);
+  const itemized=calculateScenario({...next,purchaseCosts:{...next.purchaseCosts,mode:'itemized'}});
+  assert.equal(itemized.cash.purchaseFees,1900);
+  assert.equal(next.purchaseCosts.provisionAmount, 5000, 'inactive fixed reference is retained without addition');
+});
+
+test('the percentage upgrade preserves a saved arras calendar and the separate 3000 buffer', () => {
+  const previous=planningScenario();previous.purchasePlanVersion=1;
+  previous.cash.familyLoanAvailableBeforeDeposit=false;
+  previous.familyLoan.coverEarlyLiquidity=false;
+  const next=adoptPurchaseProvision(previous);
+  assert.equal(next.cash.familyLoanAvailableBeforeDeposit,false);
+  assert.equal(next.familyLoan.coverEarlyLiquidity,false);
+  assert.equal(next.familyLoan.extraBuffer,3000);
+  assert.equal(calculateScenario(next).cash.purchaseFees,3500);
 });
 
 test('purchase-plan adoption runs once and respects later independent timing and fee choices', () => {
@@ -100,7 +115,7 @@ test('lower-funding comparison explains the ICF reduction without claiming it is
  const s=adoptPurchaseProvision(planningScenario()),r=calculateScenario(s);
  const html=renderDepositFunding(s,r,ui);
  assert.equal(r.familyLoan.principal,17500);
- assert.ok(html.includes('34250'),'the extra liquidity must be visible before treating the purchase as funded');
+ assert.ok(html.includes('32750'),'the extra liquidity must be visible before treating the purchase as funded');
  assert.ok(html.includes('de 35000 a 17500'));
  assert.ok(html.includes('no una regla acreditada del ICF'));
  assert.ok(html.includes('solo hipótesis'));

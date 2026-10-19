@@ -103,6 +103,8 @@ test('a new property resets property-specific amounts, confirmations, and identi
   for (const key of ['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker', 'other', 'renovations', 'reserve']) assert.equal(fresh.purchaseCosts[key], 0);
   assert.equal(fresh.purchaseCosts.mode, 'provision');
   assert.equal(fresh.purchaseCosts.provisionAmount, 5000);
+  assert.equal(fresh.purchaseCosts.provisionBasis, 'percent');
+  assert.equal(fresh.purchaseCosts.provisionPercent, 2);
   assert.equal(fresh.purchaseCosts.provisionBeforeSigning, 0);
   for (const key of ['ibiAnnual', 'wasteAnnual', 'communityMonthly', 'maintenanceAnnual']) assert.equal(fresh.budget[key], 0);
   assert.equal(fresh.budget.propertyCostsEstimated, false);

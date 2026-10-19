@@ -1,5 +1,5 @@
-import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=27';
-import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=27';
+import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=28';
+import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=28';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
@@ -160,7 +160,7 @@ export function createHousingScenario(current = {}, rawDetails = {}) {
   // are retained exactly; property-specific tax settings start from defaults.
   fresh.tax = { ...structuredClone(DEFAULT_SCENARIO.tax), buyers: structuredClone(source.tax.buyers), mode: details.taxMode };
   fresh.cash = { ...structuredClone(DEFAULT_SCENARIO.cash), savings: source.cash.savings, familyLoanAvailableBeforeDeposit: true };
-  fresh.purchaseCosts = { ...structuredClone(DEFAULT_SCENARIO.purchaseCosts), mode: 'provision', provisionAmount: 5000, provisionBeforeSigning: 0 };
+  fresh.purchaseCosts = { ...structuredClone(DEFAULT_SCENARIO.purchaseCosts), mode: 'provision', provisionBasis: 'percent', provisionPercent: 2, provisionAmount: 5000, provisionBeforeSigning: 0 };
   fresh.appraisalValue = null;
   fresh.referenceValue = null;
   fresh.declaredValue = null;

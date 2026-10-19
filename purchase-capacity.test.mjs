@@ -43,6 +43,53 @@ test('the operational mother-loan cap and advance deposit constrain the maximum 
   assert.ok(r.pendingAssumptions.some(text => text.includes('arras')));
 });
 
+test('a percentage provision is recalculated for the capacity price and preserves the separate 3000 euro reserve', () => {
+  const s = base();
+  s.purchaseCosts.provisionBasis = 'percent';
+  s.purchaseCosts.provisionPercent = 2;
+  s.cash.depositPercent = 0;
+  s.budget.incomes = [{monthly: 10000, payments: 12}];
+  const before = structuredClone(s);
+  const r = calculatePurchaseCapacity(s);
+  assert.equal(r.valid, true);
+  assert.equal(r.maxPrice, 248500);
+  assert.equal(r.bindingConstraint, 'cash');
+  assert.equal(r.summary.fees, 4970);
+  assert.equal(r.summary.buffer, 3000);
+  assert.equal(r.summary.loanRequired, 20995);
+  assert.equal(r.summary.cashRequired, 12425 + 4970 + 600 + 3000);
+  assert.equal(r.summary.fundingGap, 0);
+  const atLimit = calculateScenario({...s, purchasePrice: r.maxPrice});
+  const next = calculateScenario({...s, purchasePrice: r.maxPrice + r.priceStep});
+  assert.equal(atLimit.cash.purchaseFees, r.summary.fees);
+  assert.equal(next.cash.purchaseFees, 4980);
+  assert.ok(next.cash.fundingGap > 0);
+  // The saved property's price is not a frozen fee quote for every other price.
+  assert.equal(calculatePurchaseCapacity({...s, purchasePrice: 100000}).maxPrice, r.maxPrice);
+  assert.deepEqual(s, before);
+});
+
+test('an advance within percentage fees does not make capacity invalid at tiny synthetic prices', () => {
+  const s = base();
+  s.purchaseCosts.provisionBasis = 'percent';
+  s.purchaseCosts.provisionPercent = 2;
+  s.purchaseCosts.provisionBeforeSigning = 500;
+  s.cash.depositPercent = 0;
+  s.budget.incomes = [{monthly: 10000, payments: 12}];
+  assert.equal(calculateScenario({...s, purchasePrice: 500}).valid, false);
+  const r = calculatePurchaseCapacity(s);
+  assert.equal(r.valid, true);
+  assert.equal(r.maxPrice, 248500);
+  assert.equal(r.summary.earlyCashRequired, 500);
+  assert.equal(r.summary.fees, 4970);
+  assert.equal(s.purchaseCosts.provisionBeforeSigning, 500);
+  const tooLowCeiling = calculatePurchaseCapacity(s, {searchCeiling: 20000});
+  assert.equal(tooLowCeiling.valid, false);
+  assert.equal(tooLowCeiling.maxPrice, null);
+  assert.ok(tooLowCeiling.errors.some(message => message.includes('Parte de la provisión')));
+  assert.equal(s.purchaseCosts.provisionBeforeSigning, 500);
+});
+
 test('a future capacity hypothesis uses its explicit month without treating a future receipt as current money',()=>{
  const scenario=base();scenario.familyLoan.maxAmount=60000;
  scenario.familyPlan={personalCommitments:[{id:'temporary',label:'Temporary credit',owner:'buyer1',monthly:350,kind:'debt',settleWithReceipt:true,payoffEstimate:2000}],extraordinaryReceipt:{enabled:true,month:'2027-01',amount:2200,owner:'buyer1'}};

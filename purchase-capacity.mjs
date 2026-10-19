@@ -1,4 +1,4 @@
-import {calculateScenario, normalizeScenario} from './finance.mjs?v=27';
+import {calculateScenario, getPurchaseProvisionAmount, normalizeScenario} from './finance.mjs?v=28';
 
 const unique = values => [...new Set(values.filter(Boolean))];
 const moneyTolerance = 0.005;
@@ -47,7 +47,33 @@ export function calculatePurchaseCapacity(input = {}, options = {}) {
       calculateScenario({...template, purchasePrice: index * step}, options.asOfMonth === undefined ? {} : {asOfMonth: options.asOfMonth}));
     return cache.get(index);
   };
-  const first = evaluate(1);
+  // A fixed advance cannot exceed the provision that includes it. With a
+  // percentage provision, very cheap synthetic prices can therefore be invalid
+  // even though real candidates are valid. Start at the first grid price that
+  // can contain the advance, without reducing it or changing the search ceiling.
+  let minIndex = 1;
+  const provisionPercent = Number(template.purchaseCosts.provisionPercent);
+  const prepaidProvision = Number(template.purchaseCosts.provisionBeforeSigning);
+  if (template.purchaseCosts.provisionBasis === 'percent'
+    && Number.isFinite(provisionPercent) && provisionPercent > 0 && provisionPercent <= 100
+    && Number.isFinite(prepaidProvision) && prepaidProvision > 0) {
+    const containsAdvance = index => getPurchaseProvisionAmount({...template, purchasePrice: index * step}) >= prepaidProvision;
+    if (containsAdvance(maxIndex)) {
+      let low = 1;
+      let high = maxIndex;
+      while (low < high) {
+        const middle = low + Math.floor((high - low) / 2);
+        if (containsAdvance(middle)) high = middle;
+        else low = middle + 1;
+      }
+      minIndex = low;
+    } else {
+      // Evaluation at the actual ceiling reports the incompatible advance;
+      // silently clipping it would overstate available cash.
+      minIndex = maxIndex;
+    }
+  }
+  const first = evaluate(minIndex);
   if (!first.valid) return {...empty, errors: first.validation?.errors || ['Los datos del cálculo no son válidos.']};
 
   // Monotone conditions: financing percentages and progressive taxes cannot
@@ -61,7 +87,7 @@ export function calculatePurchaseCapacity(input = {}, options = {}) {
   const search = predicate => {
     if (!predicate(first)) return {index: 0, ceilingReached: false};
     if (predicate(evaluate(maxIndex))) return {index: maxIndex, ceilingReached: true};
-    let low = 1;
+    let low = minIndex;
     let high = maxIndex;
     while (low + 1 < high) {
       const middle = low + Math.floor((high - low) / 2);

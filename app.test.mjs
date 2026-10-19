@@ -10,7 +10,7 @@ const memory = { values: new Map(), getItem(key) { return this.values.get(key) ?
 let instance=0;
 const shared = id => normalizeScenario({id,name:'Casa de prueba',budget:{incomes:[{monthly:2100,payments:12},{monthly:1700,payments:14}]}});
 const tick = () => new Promise(resolve=>setImmediate(resolve));
-const savedHome=id=>({...shared(id),financingPlanVersion:2,purchasePlanVersion:1,discountBreakdownVersion:1,preclosingPlanVersion:1,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-02T00:00:00Z'});
+const savedHome=id=>({...shared(id),financingPlanVersion:2,purchasePlanVersion:1,purchaseProvisionVersion:1,discountBreakdownVersion:1,preclosingPlanVersion:1,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-02T00:00:00Z'});
 
 // A small DOM substitute tests application wiring; no browser or external network.
 function boot({hash='#resumen',draft=null,joined=false,scenarios=[],signupGate=null,localScenarios=[],draftMeta=null,saveGate=null,failSaves=0,listGate=null}={}) {
@@ -182,6 +182,7 @@ test('adding and renaming a flat preserves the family budget and one saved ident
  await app.node('save-form').handlers.submit({preventDefault(){}});
  const first=app.draft();assert.equal(first.listingDetails.title,undefined);assert.equal(first.listingDetails.sourceReadAt,undefined);assert.notEqual(first.id,'previous-home');assert.equal(first.name,'Piso de prueba');assert.equal(first.propertyType,'flat');assert.equal(first.purchasePrice,175000);
  assert.equal(first.budget.foodMonthly,465);assert.equal(first.budget.storageMonthly,65);assert.equal(first.budget.existingDebtMonthly,215);
+ assert.equal(first.purchaseCosts.provisionBasis,'percent');assert.equal(first.purchaseCosts.provisionPercent,2);assert.equal(calculateScenario(first).cash.purchaseFees,3500);
  assert.equal(first.familyLoan.rate,5);assert.equal(first.familyLoan.years,10);assert.equal(first.familyLoan.extraBuffer,3000);assert.equal(first.familyLoan.assumedTerms,true);
  assert.equal(app.requests.filter(r=>r.path==='/rest/v1/scenarios'&&r.body).length,1);
  await app.node('save-btn').handlers.click();app.node('save-name').value='Piso con nombre cambiado';

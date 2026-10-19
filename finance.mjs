@@ -1,5 +1,5 @@
-import {calculatePreclosing} from './preclosing.mjs?v=27';
-import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=27';
+import {calculatePreclosing} from './preclosing.mjs?v=28';
+import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=28';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -47,7 +47,7 @@ export const DEFAULT_SCENARIO = Object.freeze({
   icf: { enabled: false, ltv: 0.2, maxAmount: 50000, repaymentYears: 5, eligibilityConfirmed: false },
   cash: { savings: 0, depositPercent: 0.1, preClosingLoanPayments: 0, familyLoanAvailableBeforeDeposit: false, depositFundingMode: 'pending' },
   purchaseCosts: {
-    mode: 'itemized', provisionAmount: 5000, provisionBeforeSigning: 0,
+    mode: 'itemized', provisionBasis: 'fixed', provisionPercent: 2, provisionAmount: 5000, provisionBeforeSigning: 0,
     appraisal: 0, legal: 0, notary: 0, registry: 0, agency: 0,
     broker: 0, other: 0, renovations: 0, moving: 0, reserve: 0, vat: {}, brokerQuotePending: false,
   },
@@ -98,6 +98,14 @@ const currentMadridMonth = () => {
     .formatToParts(new Date());
   return `${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}`;
 };
+
+/** Final purchase-cost provision. Percentage values use 2 for 2%, not 0.02. */
+export function getPurchaseProvisionAmount(s) {
+  const costs=s.purchaseCosts||{};
+  return costs.provisionBasis==='percent'
+    ? rounded(nonnegative(s.purchasePrice)*nonnegative(costs.provisionPercent)/100)
+    : nonnegative(costs.provisionAmount);
+}
 
 export function normalizeScenario(input = {}) {
   const base = structuredClone(DEFAULT_SCENARIO);
@@ -440,7 +448,9 @@ export function validateScenario(input = {}) {
   }
   if (!['itemized', 'provision'].includes(s.purchaseCosts.mode)) errors.push('Selecciona gastos de compra desglosados o provisión general.');
   numeric(s.purchaseCosts.provisionAmount, 'Provisión general de gastos de compra');
-  numeric(s.purchaseCosts.provisionBeforeSigning, 'Parte de la provisión anterior a la firma', 0, nonnegative(s.purchaseCosts.provisionAmount));
+  if (!['fixed','percent'].includes(s.purchaseCosts.provisionBasis)) errors.push('Selecciona una provisión fija o un porcentaje del precio.');
+  numeric(s.purchaseCosts.provisionPercent, 'Porcentaje de provisión de gastos de compra', 0, 100);
+  numeric(s.purchaseCosts.provisionBeforeSigning, 'Parte de la provisión anterior a la firma', 0, getPurchaseProvisionAmount(s));
   const buyers = Array.isArray(s.tax.buyers) ? s.tax.buyers : [];
   if (s.tax.mode === 'used') {
     if (!buyers.length || Math.abs(sum(buyers.map((b) => n(b.share))) - 1) > 0.000001) errors.push('Las cuotas de propiedad deben sumar el 100%.');
@@ -641,7 +651,7 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
   const purchaseFeesMode = s.purchaseCosts.mode;
   const purchaseFeesEstimated = purchaseFeesMode === 'provision';
   const purchaseFeesVatAdded = purchaseFeesEstimated ? 0 : sum(['appraisal', 'legal', 'notary', 'registry', 'agency', 'broker'].map((key) => costVat[key].vatAdded));
-  const purchaseFeesProvision = nonnegative(s.purchaseCosts.provisionAmount);
+  const purchaseFeesProvision = getPurchaseProvisionAmount(s);
   const purchaseFees = purchaseFeesEstimated ? purchaseFeesProvision : purchaseFeesItemized;
   const prepaidPurchaseFees = purchaseFeesEstimated ? nonnegative(s.purchaseCosts.provisionBeforeSigning) : cost.appraisal + cost.legal;
   const beforeMortgageBaseRequired = depositAmount + prepaidPurchaseFees;

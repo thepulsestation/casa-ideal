@@ -1,14 +1,17 @@
-import {calculateScenario, getAffordability, suggestFamilyLoanTerm, compareFamilyLoanTerms} from './finance.mjs?v=27';
-import {getCommuteIndicators} from './commute.mjs?v=27';
-import {familyLoanComparisonYears,familyLoanTermNotice,renderFamilyLoanReference,renderBankDebtBasis} from './financing-ui.mjs?v=27';
+import {calculateScenario, getAffordability, suggestFamilyLoanTerm, compareFamilyLoanTerms} from './finance.mjs?v=28';
+import {getCommuteIndicators} from './commute.mjs?v=28';
+import {familyLoanComparisonYears,familyLoanTermNotice,renderFamilyLoanReference,renderBankDebtBasis} from './financing-ui.mjs?v=28';
 
 export function adoptPurchaseProvision(s) {
- if(s.purchasePlanVersion===1)return s;
+ if(s.purchasePlanVersion===1&&s.purchaseProvisionVersion===1)return s;
  const next=structuredClone(s),c=next.purchaseCosts;
- if(!['appraisal','legal','notary','registry','agency','broker','other'].some(k=>Number(c[k])>0))c.mode='provision';
- next.cash.familyLoanAvailableBeforeDeposit=true;
- next.familyLoan.coverEarlyLiquidity=true;
- next.purchasePlanVersion=1;
+ // Keep a previously chosen arras calendar when updating existing studies.
+ if(s.purchasePlanVersion!==1){
+  next.cash.familyLoanAvailableBeforeDeposit=true;
+  next.familyLoan.coverEarlyLiquidity=true;
+ }
+ if(s.purchaseProvisionVersion!==1){c.mode='provision';c.provisionBasis='percent';c.provisionPercent=2;}
+ next.purchasePlanVersion=1;next.purchaseProvisionVersion=1;
  return next;
 }
 export function renderPropertyContext(s,view,{esc}) {

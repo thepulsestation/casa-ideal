@@ -7,7 +7,7 @@ export const SOURCES = [
     id: 'aeat-iva-servicios',
     title: 'AEAT · IVA de servicios y presupuestos',
     url: 'https://www3.agenciatributaria.gob.es/Sede/iva/calculo-iva-repercutido-clientes/tipos-impositivos-iva.html',
-    summary: 'El tipo general es el 21 %. La calculadora conserva los importes antiguos como precios finales y solo añade IVA cuando se introduce expresamente un presupuesto sin IVA, al tipo de su factura. La provisión de 3.000–5.000 € es orientativa: falta confirmar con el gestor si cubre IVA y todos los servicios; no se multiplica entera por el 21 %.',
+    summary: 'El tipo general es el 21 %. La calculadora conserva los importes antiguos como precios finales y solo añade IVA cuando se introduce expresamente un presupuesto sin IVA, al tipo de su factura. La provisión familiar es el 2 % del precio de compra como total final estimado, con IVA incluido. Se contrastará con los presupuestos reales y todos sus conceptos; no se multiplica entera por el 21 %.',
   },
   {
     id: 'aeat-iva-suplidos',
