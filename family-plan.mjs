@@ -1,4 +1,4 @@
-import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=21';
+import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=22';
 
 // This plan allocates cash between residents. It never changes the bank's
 // definition of debt or silently makes one resident cover another's deficit.

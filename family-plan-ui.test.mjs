@@ -31,7 +31,7 @@ test('monthly view defaults to the first owning month, with a local month select
   for (const id of ids) assert.ok(html.includes(`<h3>${id}</h3>`));
   assert.match(html, /necesita ayuda para cubrir su parte/);
   assert.match(html, /no redistribuye ese importe automáticamente/);
-  assert.match(html, /family-plan-negative/);
+  assert.match(html, /has-deficit/);
 });
 
 test('month selection and end dates remain editable and university is distinguished from debt', () => {
@@ -150,16 +150,22 @@ test('unallocated current costs are already in the household and individual figu
   const html = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2026-12'});
   assert.match(html, /Faltan por asignar 90.00 € de otros gastos actuales/);
   assert.match(html, /El hogar ya los descuenta, pero las tarjetas individuales todavía no/);
-  assert.equal((html.match(/MÁXIMO PROVISIONAL · FALTA REPARTIR GASTOS/g) || []).length, 4);
+  assert.equal((html.match(/GASTO CONOCIDO · FALTA REPARTIR OTROS/g) || []).length, 4);
+  assert.equal((html.match(/MÁXIMO PROVISIONAL · FALTA REPARTIR GASTOS/g) || []).length, 0);
   assert.match(html, /<button type="button" class="card-link" data-action="plan-other-costs">Asignar otros gastos actuales<\/button>/);
   assert.match(html, /<select id="family-plan-other-costs"/);
   assert.match(html, /Incluido en gastos · sin pagador todavía/);
   assert.match(html, /90.00 € del hogar · falta elegir quién los paga/);
-  assert.match(html, /En los meses con gastos sin asignar, las cifras personales son un máximo provisional/);
+  assert.match(html, /En los meses con gastos sin asignar, las cifras personales todavía no incluyen esa parte/);
   assert.match(html, /Gastos sin asignar<\/small>/);
   const owning = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2027-01'});
   assert.doesNotMatch(owning, /family-plan-unassigned/);
-  assert.match(owning, /En los meses con gastos sin asignar, las cifras personales son un máximo provisional/);
+  assert.match(owning, /En los meses con gastos sin asignar, las cifras personales todavía no incluyen esa parte/);
+  const remaining = renderFamilyPlan(scenario, result, {...helpers, tableMode: 'remaining'});
+  assert.match(remaining, /En los meses con gastos sin asignar, las cifras personales son un máximo provisional/);
+  const rentalRemaining = renderFamilyPlan(scenario, result, {...helpers, tableMode: 'remaining', selectedMonth: '2026-12'});
+  assert.equal((rentalRemaining.match(/MÁXIMO PROVISIONAL · FALTA REPARTIR GASTOS/g) || []).length, 4);
+  assert.equal((rentalRemaining.match(/GASTO CONOCIDO · FALTA REPARTIR OTROS/g) || []).length, 0);
 });
 
 test('new person and current allocation selectors escape names without exposing invalid mode values', () => {
@@ -171,4 +177,80 @@ test('new person and current allocation selectors escape names without exposing 
   assert.match(html, /&lt;img src=x onerror=bad\(\)&gt;/);
   assert.match(html, /value="unassigned" selected/);
   assert.match(html, /data-field="familyPlan.currentAllocation.rentPayer"><option value="buyer1" selected/);
+});
+
+function calendarRow(html, month) {
+  const calendar = html.split('<table class="family-plan-monthly-table">')[1] || '';
+  const marker = `data-action="toggle-plan-month" data-id="${month}"`;
+  const start = calendar.indexOf(marker);
+  return start < 0 ? '' : calendar.slice(start, calendar.indexOf('</tr>', start));
+}
+
+test('the calendar starts with expenses and the display selector switches to remaining money without financial fields', () => {
+  const {scenario, result} = fixture();
+  const expenses = renderFamilyPlan(scenario, result, helpers);
+  assert.ok(expenses.includes('<option value="expenses" selected>Gastos · lo que paga cada uno</option>'));
+  assert.ok(expenses.includes('<caption>Gasto a cargo de cada uno · 3 meses</caption>'));
+  assert.ok(calendarRow(expenses, '2026-12').includes('<td class="number">450.00 €</td>'));
+  assert.ok(!calendarRow(expenses, '2026-12').includes('1050.00 €'));
+  assert.ok(expenses.includes('GASTO A SU CARGO'));
+  assert.ok(!expenses.includes('data-field="familyPlan.tableMode"'));
+  const remaining = renderFamilyPlan(scenario, result, {...helpers, tableMode: 'remaining'});
+  assert.ok(remaining.includes('<option value="remaining" selected>Dinero que queda · margen para ahorrar</option>'));
+  assert.ok(remaining.includes('<caption>Dinero que queda · 3 meses</caption>'));
+  assert.ok(calendarRow(remaining, '2026-12').includes('<td class="number">1050.00 €</td>'));
+  assert.ok(!calendarRow(remaining, '2026-12').includes('450.00 €'));
+  assert.ok(calendarRow(remaining, '2027-01').includes('family-plan-negative">-200.00 €'));
+  assert.ok(renderFamilyPlan(scenario, result, {...helpers, tableMode: '<invalid>'}).includes('<option value="expenses" selected>'));
+});
+
+test('mother expenses are her own salary cost after the children repayment, while her full payment remains visible', () => {
+  const {scenario, result} = fixture();
+  result.months[1].people.mother = person({income: 1300, common: 240, mortgage: 0, familyRepayment: 0, motherBankPayment: 300, internalReceived: 200, expenses: 540, remaining: 960});
+  const html = renderFamilyPlan(scenario, result, {...helpers, expandedMonths: new Set(['2027-01'])});
+  const row = calendarRow(html, '2027-01');
+  assert.ok(row.includes('<td class="number">340.00 €</td>'));
+  assert.ok(!row.includes('540.00 €'));
+  assert.ok(!row.includes('960.00 €'));
+  const card = html.match(/<article class="family-plan-person"><h3>mother<\/h3>(.*?)<\/article>/s)?.[1] || '';
+  assert.ok(card.includes('GASTO A SU CARGO</span><strong class="family-plan-remainder">340.00 €'));
+  assert.ok(card.includes('Pagos completos asignados</span><strong>540.00 €'));
+  assert.ok(card.includes('Devolución recibida de los hijos</span><strong>+ 200.00 €'));
+  assert.ok(card.includes('Dinero que queda</span><strong>960.00 €'));
+  assert.ok(html.includes('Cuota de mamá al banco'));
+  assert.ok(html.includes('Gasto a cargo de su nómina · pagos menos devoluciones'));
+});
+
+test('each month disclosure expands the requested breakdown independently of the selected month and mode', () => {
+  const {scenario, result} = fixture();
+  result.months[0].people.buyer2.university = 315;
+  result.months[2].people.buyer2.university = 0;
+  for (const tableMode of ['expenses', 'remaining']) {
+    const html = renderFamilyPlan(scenario, result, {...helpers, tableMode, selectedMonth: '2027-01', expandedMonths: new Set(['2026-12', '2027-07'])});
+    assert.ok(calendarRow(html, '2026-12').includes('aria-expanded="true" aria-controls="family-plan-details-2026-12"'));
+    assert.ok(calendarRow(html, '2027-01').includes('aria-expanded="false"'));
+    assert.ok(html.includes('<tr id="family-plan-details-2026-12" class="family-plan-month-detail"><td colspan="7"><div'));
+    assert.ok(html.includes('<tr id="family-plan-details-2027-01" class="family-plan-month-detail" hidden><td colspan="7"></td></tr>'));
+    const december = html.split('<tr id="family-plan-details-2026-12"')[1]?.split('<tr class="family-plan-current-month">')[0] || '';
+    assert.ok(december.includes('Desglose de diciembre de 2026 · Alquiler · antes de la compra'));
+    assert.ok(december.includes('315.00 €'));
+    const july = html.split('<tr id="family-plan-details-2027-07"')[1] || '';
+    assert.ok(july.includes('Desglose de julio de 2027 · Vivienda comprada'));
+    assert.ok(!july.includes('315.00 €'));
+  }
+  const closed = renderFamilyPlan(scenario, result, helpers);
+  assert.equal((closed.match(/class="family-plan-month-detail" hidden/g) || []).length, 3);
+  assert.equal((closed.match(/class="family-plan-breakdown"/g) || []).length, 1, 'closed months do not build unnecessary nested tables');
+});
+
+test('expense mode keeps unknown incoming repayments incomplete and labels a negative net cost as a credit', () => {
+  const {scenario, result} = fixture();
+  result.months[0].people.mother = person({expenses: 400, internalReceived: null, remaining: null});
+  result.months[2].people.mother = person({expenses: 100, internalReceived: 150, remaining: 1550});
+  const html = renderFamilyPlan(scenario, result, helpers);
+  assert.ok(calendarRow(html, '2026-12').includes('<td class="number">Por completar</td>'));
+  assert.ok(!calendarRow(html, '2026-12').includes('400.00 €'));
+  assert.ok(calendarRow(html, '2027-07').includes('family-plan-credit">-50.00 €<small>Saldo a favor</small>'));
+  const credit = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2027-07'});
+  assert.ok(credit.includes('SALDO A FAVOR · DEVOLUCIONES SUPERIORES A PAGOS'));
 });

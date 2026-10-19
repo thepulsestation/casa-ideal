@@ -642,3 +642,20 @@ test('current payer controls and month shortcuts preserve the future plan and sa
  assert.equal(saved.currentAllocation.brotherLivingShare,.6);assert.equal(saved.currentAllocation.rentPayer,'buyer1');
  assert.equal(saved.sharedCostMode,'workers');assert.equal(saved.currentAllocation.otherCostMode,'unassigned');
 });
+
+test('expense and remaining views retain expanded months without writing financial data',async()=>{
+ const home=savedHome('expense-view');home.cash.preClosingLoanPayments=2;
+ const profile={...extractFamilyProfile(home),createdAt:home.createdAt,updatedAt:home.updatedAt};
+ const app=boot({hash:buildFamilyHash('reparto',CODE,home.id),scenarios:[home,profile]});await app.loading;
+ assert.match(app.html,/<option value="expenses" selected>/);
+ const month=app.html.match(/data-action="toggle-plan-month" data-id="([^"]+)"/)?.[1];assert.ok(month);
+ await app.node('action-toggle-plan-month'+month).handlers.click();
+ assert.ok(app.html.includes('aria-expanded="true"'));
+ const selector=app.node('family-plan-table-mode');selector.value='remaining';await selector.handlers.change({target:selector});
+ assert.equal(memory.getItem('casa-ideal.family-plan-table-mode'),'remaining');
+ assert.match(app.html,/<option value="remaining" selected>/);assert.ok(app.html.includes('aria-expanded="true"'));
+ await app.node('action-toggle-plan-month'+month).handlers.click();
+ assert.match(app.html,new RegExp('id="family-plan-details-'+month+'" class="family-plan-month-detail" hidden'));
+ assert.equal(app.requests.filter(request=>request.method==='PATCH').length,0);
+ assert.deepEqual(app.server.get(profile.id).data,profile);
+});
