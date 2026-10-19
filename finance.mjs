@@ -1,5 +1,5 @@
-import {calculatePreclosing} from './preclosing.mjs?v=25';
-import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=25';
+import {calculatePreclosing} from './preclosing.mjs?v=26';
+import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=26';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -536,6 +536,7 @@ export function validateScenario(input = {}) {
   const personalPlan = normalizePersonalCommitments(s.familyPlan ?? {});
   errors.push(...personalPlan.errors);
   if (s.familyPlan?.personalDebtEndMonth != null && !isMonth(s.familyPlan.personalDebtEndMonth)) errors.push('El final de la deuda personal necesita un mes válido con formato AAAA-MM.');
+  if (s.familyPlan?.usePurchaseDebtDate !== undefined && typeof s.familyPlan.usePurchaseDebtDate !== 'boolean') errors.push('La elección de deudas para el mes de compra debe ser verdadera o falsa.');
   numeric(s.budget.debtRatioLimit, 'Límite endeudamiento', 0.01, 1);
   if (!Array.isArray(s.budget.incomes)) errors.push('Los ingresos deben ser una lista.');
   if (s.budget.incomes.length > 2) errors.push('Solo hay dos titulares hipotecarios. Añade los ingresos de madre y hermana en sus perfiles de convivientes.');
@@ -807,10 +808,15 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
   const personalExpenseMonthly = personalCommitmentExpenseMonthly + publicTransportExpenseMonthly;
   const existingDebt = baseExistingDebtMonthly + additionalBorrowerDebtMonthly;
   const familyExistingDebt = baseFamilyExistingDebtMonthly + additionalNonBorrowerDebtMonthly;
+  const bankDebtAsOfMonth = s.familyPlan?.usePurchaseDebtDate === true && isMonth(s.familyPlan.purchaseMonth) && s.familyPlan.purchaseMonth > asOfMonth ? s.familyPlan.purchaseMonth : asOfMonth;
+  const bankCommitments = calculatePersonalCommitments(s.familyPlan ?? {},{asOfMonth:bankDebtAsOfMonth});
+  const bankBaseDebt = s.familyPlan?.personalDebtEndMonth == null || bankDebtAsOfMonth <= s.familyPlan.personalDebtEndMonth ? nonnegative(s.budget.existingDebtMonthly) : 0;
+  const bankExistingDebtMonthly = bankBaseDebt + sum(['buyer1','buyer2'].map(id=>bankCommitments.debtByOwner[id]));
+  const bankDebtProjected = bankDebtAsOfMonth !== asOfMonth;
   const mortgageOnly = mortgage.monthlyPayment;
   const homeMonthly = mortgageOnly + propertyOverheadMonthly + utilitiesMonthly;
   const internalRepayment = nonnegative(motherTransfer.familyMonthlyRepayment);
-  const borrowerDebtMonthly = mortgageOnly + existingDebt + internalRepayment;
+  const borrowerDebtMonthly = mortgageOnly + bankExistingDebtMonthly + internalRepayment;
   const totalDebtMonthly = mortgageOnly + existingDebt + knownFamilyPayment + familyExistingDebt;
   const totalMonthly = homeMonthly + knownFamilyPayment + existingDebt + familyExistingDebt + householdMonthly + personalExpenseMonthly;
   const debtRatio = regularIncome > 0 ? borrowerDebtMonthly / regularIncome : null;
@@ -818,6 +824,7 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
   const currentRent = nonnegative(s.budget.currentRent);
   const currentComparable = currentRent + currentUtilitiesMonthly + existingDebt + familyExistingDebt + householdMonthly + personalExpenseMonthly + nonnegative(s.budget.currentOtherMonthly);
   if (personalCommitments.extraordinarySettlement.planned) warnings.push('La cancelación de deudas depende del cobro extraordinario previsto y de los saldos reales. No aumenta la nómina ni los ahorros disponibles para la compra.');
+  if (bankDebtProjected) warnings.push(`El esfuerzo hipotecario utiliza las deudas previstas para ${bankDebtAsOfMonth}; el presupuesto actual conserva las cuotas anteriores. La reducción requiere cancelar efectivamente las deudas antes del estudio del banco.`);
   const missingEstimates = [
     ...(purchaseFeesEstimated ? ['Provisión de gastos de compra sin presupuestos individuales'] : []),
     ...(s.purchaseCosts.brokerQuotePending ? ['Honorarios de agencia sin presupuesto final'] : []),
@@ -850,7 +857,7 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
     utilityMode, currentUtilityMode, utilitiesMode: utilityMode, currentUtilitiesMode: currentUtilityMode,
     utilitiesAggregateMonthly: utilitiesUnitemizedMonthly, currentUtilitiesAggregateMonthly: currentUtilitiesUnitemizedMonthly,
     utilitiesDetailedMonthly, currentUtilitiesDetailedMonthly,
-    existingDebtMonthly: existingDebt, familyExistingDebtMonthly: familyExistingDebt,
+    existingDebtMonthly: existingDebt, familyExistingDebtMonthly: familyExistingDebt, bankExistingDebtMonthly, bankDebtAsOfMonth, bankDebtProjected,
     baseExistingDebtMonthly, baseFamilyExistingDebtMonthly, additionalBorrowerDebtMonthly, additionalNonBorrowerDebtMonthly,
     personalCommitmentDebtMonthly, personalExpenseMonthly, personalCommitmentExpenseMonthly, publicTransportExpenseMonthly, personalCommitments, personalDebtCancellationAssumed,
     familyLoanMonthly: familyLoan.monthlyPayment, totalDebtMonthly, totalMonthly,
@@ -863,7 +870,7 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
     currentRemainingRegular: actualRegularIncome - currentComparable,
     currentRemainingAveraged: actualAveragedIncome - currentComparable,
     debtRatio, familyDebtRatio, debtRatioLimit: n(s.budget.debtRatioLimit),
-    maximumMortgageByRatio: Math.max(0, regularIncome * n(s.budget.debtRatioLimit) - existingDebt - internalRepayment),
+    maximumMortgageByRatio: Math.max(0, regularIncome * n(s.budget.debtRatioLimit) - bankExistingDebtMonthly - internalRepayment),
     currentRent, currentComparable, comparisonToRent: homeMonthly - currentRent,
     mortgageComparedToRent: mortgageOnly - currentRent,
     allInDifference: totalMonthly - currentComparable,
@@ -970,7 +977,7 @@ export function getAffordability(input = {}, calculatedResult = null) {
   const b = r.budget;
   const incomeKnown = b.regularIncome > 0;
   const debtKnown = incomeKnown && !b.borrowerDebtRatioIncomplete;
-  const capacityBeforeMother = incomeKnown ? b.regularIncome * b.debtRatioLimit - b.existingDebtMonthly - r.mortgage.monthlyPayment : null;
+  const capacityBeforeMother = incomeKnown ? b.regularIncome * b.debtRatioLimit - (b.bankExistingDebtMonthly ?? b.existingDebtMonthly) - r.mortgage.monthlyPayment : null;
   const withinDebtLimit = debtKnown ? b.debtRatio <= b.debtRatioLimit + 1e-10 : null;
   const householdRemaining = b.actualRegularIncome > 0 && r.familyLoan.termsKnown ? b.remainingRegular : null;
   const blockedReasons = [];
@@ -991,7 +998,7 @@ export function getAffordability(input = {}, calculatedResult = null) {
     capacityBeforeMother, capacityAppliesTo: 'internal-family-repayment',
     debtRatio: debtKnown ? b.debtRatio : null, minimumKnownDebtRatio: b.debtRatio,
     debtRatioLimit: b.debtRatioLimit, borrowerIncome: b.regularIncome,
-    mortgageMonthly: r.mortgage.monthlyPayment, existingDebtMonthly: b.existingDebtMonthly,
+    mortgageMonthly: r.mortgage.monthlyPayment, existingDebtMonthly: b.bankExistingDebtMonthly ?? b.existingDebtMonthly,
     motherBankMonthly: r.familyLoan.monthlyPayment, internalRepaymentMonthly: r.motherTransfer.familyMonthlyRepayment,
     cashFundingGap: r.cash.fundingGap, earlyCashGap: r.cash.beforeMortgageGap, householdRemaining,
     preclosingFundingNeed:r.preclosing.additionalCashToKeepBuffer,preclosingLiquidityGap:r.preclosing.preclosingLiquidityGap,

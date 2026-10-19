@@ -10,6 +10,23 @@ import {
 
 const close = (actual, expected, tolerance = 0.005) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} ≠ ${expected}`);
 
+test('mortgage debt may use the purchase date while current household cash retains its real installments',()=>{
+ const source=normalizeScenario({budget:{incomes:[{monthly:2000,payments:12},{monthly:1500,payments:14}],existingDebtMonthly:100},familyPlan:{purchaseMonth:'2027-03',personalCommitments:[{id:'temporary',label:'Temporary credit',owner:'buyer1',monthly:180,kind:'debt',settleWithReceipt:true,payoffEstimate:1700}],extraordinaryReceipt:{enabled:true,month:'2027-01',amount:2000,owner:'buyer1'}}});
+ const today=calculateScenario(source,{asOfMonth:'2026-10'});
+ source.familyPlan.usePurchaseDebtDate=true;
+ const mortgage=calculateScenario(source,{asOfMonth:'2026-10'});
+ assert.equal(mortgage.valid,true);
+ assert.equal(mortgage.budget.existingDebtMonthly,280);
+ assert.equal(mortgage.budget.bankExistingDebtMonthly,100);
+ assert.equal(mortgage.budget.bankDebtAsOfMonth,'2027-03');
+ close(today.budget.borrowerDebtMonthly-mortgage.budget.borrowerDebtMonthly,180);
+ close(today.budget.currentComparable,mortgage.budget.currentComparable);
+ close(today.budget.totalMonthly,mortgage.budget.totalMonthly);
+ assert.equal(getAffordability(source,mortgage).existingDebtMonthly,100);
+ source.familyPlan.extraordinaryReceipt.amount=1000;
+ assert.equal(calculateScenario(source,{asOfMonth:'2026-10'}).budget.bankExistingDebtMonthly,280,'no debt reduction when cancellation is unfunded');
+});
+
 test('dated personal debts affect bank effort while personal expenses affect only disposable income',()=>{
  const scenario=normalizeScenario({budget:{incomes:[{monthly:2000,payments:12},{monthly:1500,payments:12}],existingDebtMonthly:100},familyPlan:{personalDebtEndMonth:'2029-12',personalCommitments:[{id:'extra-loan',label:'Extra loan',owner:'buyer1',monthly:180,kind:'debt',settleWithReceipt:true,payoffEstimate:1700,payoffFeeRate:.01},{id:'work-cost',label:'Work cost',owner:'buyer1',monthly:90,kind:'expense'}],extraordinaryReceipt:{enabled:true,month:'2027-01',amount:2000,owner:'buyer1',confirmed:false}}});
  const before=calculateScenario(scenario,{asOfMonth:'2026-12'}),after=calculateScenario(scenario,{asOfMonth:'2027-01'});

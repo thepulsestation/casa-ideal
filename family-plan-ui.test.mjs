@@ -4,6 +4,23 @@ import {renderFamilyPlan, familyPlanMonthLabel} from './family-plan-ui.mjs';
 
 const esc = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const helpers = {euro: value => Number(value).toFixed(2) + ' €', esc};
+
+test('income, expense and available modes reconcile a dated receipt and one-off cancellation without treating transfers as new income',()=>{
+ const {scenario,result}=fixture(),row=result.months[1];
+ Object.assign(row.people.buyer1,{income:2000,extraordinaryIncome:5000,salaryExtra:0,externalIncome:7000,expenses:1000,debtSettlement:4200,reservedExtraordinary:100,remaining:1000,cashRemaining:1700});
+ Object.assign(row.people.buyer2,{income:1500,salaryExtra:1500,externalIncome:3000,expenses:450,remaining:1050,cashRemaining:2550});
+ const options={...helpers,expandedMonths:new Set([row.month])};
+ const income=renderFamilyPlan(scenario,result,{...options,tableMode:'income'});
+ assert.ok(calendarRow(income,row.month).includes('7000.00 €'));assert.ok(calendarRow(income,row.month).includes('3000.00 €'));
+ assert.ok(income.includes('<option value="income" selected>'));
+ const detail=income.split('id="family-plan-details-'+row.month+'"')[1].split('</tbody>')[0];
+ assert.ok(detail.indexOf('Ingresos del mes')<detail.indexOf('Hipoteca'));
+ assert.ok(detail.includes('Cobro extraordinario'));assert.ok(detail.includes('Cancelación de deudas'));
+ const expenses=renderFamilyPlan(scenario,result,{...options,tableMode:'expenses'});
+ assert.ok(calendarRow(expenses,row.month).includes('5300.00 €'));
+ const available=renderFamilyPlan(scenario,result,{...options,tableMode:'remaining'});
+ assert.ok(calendarRow(available,row.month).includes('1700.00 €'));
+});
 const ids = ['buyer1', 'buyer2', 'mother', 'sister'];
 const person = (overrides = {}) => ({income: 1500, common: 200, fixedPersonalDebt: 0, university: 0, mortgage: 200, familyRepayment: 50, motherBankPayment: 0, internalReceived: 0, icfRepayment: 0, expenses: 450, remaining: 1050, ...overrides});
 function fixture() {
@@ -66,7 +83,7 @@ test('internal transfers are described as internal and retain the full mother ba
   const html = renderFamilyPlan(scenario, result, helpers);
   assert.match(html, /Devolución recibida de los hijos/);
   assert.match(html, /Cuota de mamá al banco/);
-  assert.match(html, /se cuenta una sola vez/);
+  assert.match(html, /cuota bancaria una sola vez/);
   assert.match(html, /140.00 €/);
 });
 
@@ -154,7 +171,7 @@ test('unallocated current costs are already in the household and individual figu
   assert.equal((html.match(/MÁXIMO PROVISIONAL · FALTA REPARTIR GASTOS/g) || []).length, 0);
   assert.match(html, /<button type="button" class="card-link" data-action="plan-other-costs">Asignar otros gastos actuales<\/button>/);
   assert.match(html, /<select id="family-plan-other-costs"/);
-  assert.match(html, /Incluido en gastos · sin pagador todavía/);
+  assert.match(html, /incluidos en gastos · sin pagador todavía/);
   assert.match(html, /90.00 € del hogar · falta elegir quién los paga/);
   assert.match(html, /En los meses con gastos sin asignar, las cifras personales todavía no incluyen esa parte/);
   assert.match(html, /Gastos sin asignar<\/small>/);
@@ -218,7 +235,7 @@ test('mother expenses are her own salary cost after the children repayment, whil
   assert.ok(card.includes('Devolución recibida de los hijos</span><strong>+ 200.00 €'));
   assert.ok(card.includes('Dinero que queda</span><strong>960.00 €'));
   assert.ok(html.includes('Cuota de mamá al banco'));
-  assert.ok(html.includes('Gasto a cargo de su nómina · pagos menos devoluciones'));
+  assert.ok(html.includes('Gasto neto · descontadas devoluciones'));
 });
 
 test('month disclosures render compact cost rows aligned with the main table without repeating its headers', () => {
@@ -300,8 +317,9 @@ test('the monthly costs split personal commitments once and retain redistributio
   assert.equal(cost('Cobro extraordinario · solo este mes'),'500.00 €');
   assert.equal(cost('Cancelación de deudas · solo este mes'),'150.00 €');
   assert.equal(cost('Reserva fiscal del cobro'),'25.00 €');
-  assert.equal(cost('Disponible para ahorrar'),'704.00 €');
-  assert.equal(cost('Disponible con el cobro y la cancelación'),'1029.00 €');
+  assert.equal(cost('Ingresos del mes'),'1500.00 €');
+  assert.equal(cost('Gastos'),'471.00 €');
+  assert.equal(cost('Disponible para ahorrar'),'1029.00 €');
   assert.doesNotMatch(detail,/145.00 €|Otros pagos personales/,'debt aggregate and expense aggregate are not counted again alongside their details');
   const ordinary=renderFamilyPlan(scenario,result,{...helpers,expandedMonths:new Set(['2026-12'])}).split('<tbody id="family-plan-details-2026-12"')[1]?.split('</tbody>')[0]||'';
   assert.doesNotMatch(ordinary,/Cobro extraordinario · solo este mes|Cancelación de deudas · solo este mes|Reserva fiscal del cobro/);
@@ -362,6 +380,7 @@ test('sister deficit funding is editable and distinguishes available savings fro
 
 test('salary cost deducts sister help and her savings while compact rows retain her full expenses and each funding source', () => {
   const {scenario, result} = supportedSisterFixture();
+  result.months[1].household.cashRemaining=2040;
   const html = renderFamilyPlan(scenario, result, {...helpers, expandedMonths: new Set(['2027-01'])});
   const row = calendarRow(html, '2027-01');
   assert.equal((row.match(/<td class="number">320.00 €<\/td>/g) || []).length, 3);
@@ -373,16 +392,16 @@ test('salary cost deducts sister help and her savings while compact rows retain 
   assert.equal(cost('Ayuda familiar recibida'), '<td class="number">0.00 €</td>'.repeat(3) + '<td class="number">60.00 €</td><td class="number">—</td>');
   assert.equal(cost('Ahorros de tu hermana utilizados'), '<td class="number">0.00 €</td>'.repeat(3) + '<td class="number">90.00 €</td><td class="number">90.00 €</td>');
   assert.ok(cost('Pagos completos').includes('<td class="number">650.00 €</td>'));
-  assert.ok(cost('Disponible para ahorrar').endsWith('<td class="number">1950.00 €</td>'));
-  assert.ok(cost('Margen del hogar con ahorros utilizados').endsWith('<td class="number">2040.00 €</td>'));
+  assert.ok(cost('Disponible para ahorrar').endsWith('<td class="number">2040.00 €</td>'));
+  assert.equal(cost('Margen del hogar con ahorros utilizados'),undefined,'the savings draw is never added twice');
   assert.ok(cost('Ahorros de tu hermana restantes'));
   assert.doesNotMatch(detail, /<caption|<thead|<table/);
   for (const match of detail.matchAll(/<tr[^>]*>(.*?)<\/tr>/g)) {
     assert.match(match[1], /^<th scope="row" colspan="2">/);
     assert.equal((match[1].match(/<td class="number">/g) || []).length, 5);
   }
-  assert.match(html, /Margen conjunto · ingresos ordinarios/);
-  assert.match(html, /Margen incluyendo esos ahorros/);
+  assert.match(html, /Disponible después de pagar/);
+  assert.match(html, /Incluye ahorros de tu hermana utilizados/);
   assert.match(html, /no un ingreso nuevo ni un gasto adicional/);
   const remaining = renderFamilyPlan(scenario, result, {...helpers, tableMode: 'remaining'});
   assert.equal((calendarRow(remaining, '2027-01').match(/680.00 €/g) || []).length, 3);

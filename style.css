@@ -120,3 +120,4 @@
 .family-plan-monthly-table .family-plan-month-detail .family-plan-inline-expenses th,.family-plan-monthly-table .family-plan-month-detail .family-plan-inline-expenses td{font-weight:650;border-top:1px solid #ceddc4;color:var(--ink)}
 .family-plan-monthly-table .family-plan-month-detail .family-plan-inline-remaining th,.family-plan-monthly-table .family-plan-month-detail .family-plan-inline-remaining td{color:var(--green);font-weight:650;background:#edf4e6}
 @media(max-width:650px){.family-plan-monthly-table{min-width:700px}.family-plan-monthly-table th,.family-plan-monthly-table td{padding-left:8px;padding-right:8px}.family-plan-view-switch button{padding:7px 12px}}
+.family-plan-month-detail .family-plan-inline-income>th,.family-plan-month-detail .family-plan-inline-income>td{background:#e8f2ec;font-weight:650}

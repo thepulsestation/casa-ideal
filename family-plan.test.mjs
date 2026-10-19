@@ -4,6 +4,33 @@ import {normalizeScenario, calculateScenario} from './finance.mjs';
 import {DEFAULT_FAMILY_PLAN, normalizeFamilyPlan, validateFamilyPlan, calculateFamilyTimeline} from './family-plan.mjs';
 
 const close = (actual, expected, tolerance = 0.011) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`);
+
+test('extra salaries enter only scheduled months and leave ordinary income and the banking ratio unchanged',()=>{
+ const source=fixture();source.familyPlan.extraPayMonths={buyer2:[6,12],mother:[6,12]};
+ const result=calculateFamilyTimeline(source,{startMonth:'2027-05',months:8});
+ const baseline=structuredClone(source);delete baseline.familyPlan.extraPayMonths;
+ const comparison=calculateFamilyTimeline(baseline,{startMonth:'2027-05',months:8});
+ assert.equal(result.valid,true);
+ for(const [index,row]of result.months.entries()){
+  const expected=['2027-06','2027-12'].includes(row.month)?2800:0;
+  assert.equal(row.household.salaryExtra,expected);
+  assert.equal(row.household.externalIncome,row.household.income+expected);
+  close(row.household.cashRemaining-row.household.remaining,expected);
+  assert.equal(row.bankDebtRatio,comparison.months[index].bankDebtRatio);
+ }
+ assert.equal(result.annualExtras.unallocatedTotal,0);
+ const june=result.months[1];assert.equal(june.people.buyer2.externalIncome,3400);assert.equal(june.people.mother.externalIncome,2200);
+});
+
+test('partial extra-pay schedules stay editable and pending, while invalid schedules are rejected',()=>{
+ const source=fixture();source.familyPlan.extraPayMonths={buyer2:[null,'12']};source.familyPlan.extraPayAmounts={buyer2:1250};
+ const result=calculateFamilyTimeline(source,{startMonth:'2026-12',months:7});
+ assert.equal(result.valid,true);assert.equal(result.months[0].people.buyer2.salaryExtra,1250);
+ assert.equal(result.months[6].people.buyer2.salaryExtra,0);
+ assert.equal(result.annualExtras.unallocatedPeople.buyer2,1250);assert.equal(result.incomplete,true);
+ for(const bad of [[6,6],[0],[13],['wrong']])assert.equal(validateFamilyPlan({extraPayMonths:{buyer2:bad}}).valid,false);
+ source.familyPlan.extraPayMonths.buyer2=[1,6,12];assert.equal(calculateFamilyTimeline(source).valid,false);
+});
 const fixture = (overrides = {}) => normalizeScenario({
   purchasePrice: 160000, tax: {buyers: [{share: .5, rate: .05, eligibilityConfirmed: true}, {share: .5, rate: .05, eligibilityConfirmed: true}]},
   icf: {enabled: true}, mortgage: {years: 30},
@@ -137,6 +164,99 @@ test('extra salaries are disclosed separately without prorating into ordinary ca
   assert.equal(timeline.months[0].household.income, 5100);
   assert.equal(timeline.months[3].household.income, 5500);
   assert.equal(timeline.persons[0].label, 'A');
+  assert.equal(timeline.annualExtras.scheduledTotal, 0);
+  assert.equal(timeline.annualExtras.unallocatedTotal, 5600);
+  assert.deepEqual(timeline.annualExtras.pendingPeople, ['buyer2', 'mother']);
+  assert.ok(timeline.months.every(row => row.household.salaryExtra === 0));
+  assert.ok(timeline.warnings.some(warning => warning.includes('sin meses de cobro')));
+});
+
+test('explicit June and December extra pays increase real cash only on the scheduled dates', () => {
+  const source = fixture(), original = calculateFamilyTimeline(source, {startMonth: '2027-01', months: 24});
+  source.familyPlan.extraPayMonths = {buyer2: [6, 12], mother: [12, 6]};
+  const before = structuredClone(source), timeline = calculateFamilyTimeline(source, {startMonth: '2027-01', months: 24});
+  assert.equal(timeline.valid, true);
+  assert.equal(timeline.annualExtras.scheduledTotal, 5600);
+  assert.equal(timeline.annualExtras.unallocatedTotal, 0);
+  assert.deepEqual(timeline.annualExtras.pendingPeople, []);
+  assert.deepEqual(timeline.persons.find(person => person.id === 'mother').extraPaymentMonths, [6, 12]);
+  for (const [index, row] of timeline.months.entries()) {
+    const extraMonth = row.month.endsWith('-06') || row.month.endsWith('-12'), ordinary = original.months[index];
+    assert.equal(row.people.buyer2.salaryExtra, extraMonth ? 1700 : 0);
+    assert.equal(row.people.mother.salaryExtra, extraMonth ? 1100 : 0);
+    assert.equal(row.household.salaryExtra, extraMonth ? 2800 : 0);
+    assert.equal(row.household.income, ordinary.household.income);
+    assert.equal(row.household.expenses, ordinary.household.expenses);
+    assert.equal(row.household.remaining, ordinary.household.remaining);
+    assert.equal(row.bankDebtMonthly, ordinary.bankDebtMonthly);
+    assert.equal(row.bankDebtRatio, ordinary.bankDebtRatio);
+    for (const role of ['buyer1', 'buyer2', 'mother', 'sister']) {
+      const person = row.people[role];
+      assert.equal(person.common, ordinary.people[role].common);
+      close(person.externalIncome, person.income + person.salaryExtra + person.extraordinaryIncome, .001);
+      close(person.cashRemaining, ordinary.people[role].cashRemaining + person.salaryExtra, .001);
+    }
+    close(row.household.externalIncome, row.household.income + row.household.salaryExtra, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.externalIncome, 0), row.household.externalIncome, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.cashRemaining, 0), row.household.cashRemaining, .001);
+  }
+  close(timeline.months.reduce((sum, row) => sum + row.household.salaryExtra, 0), 11200, .001);
+  assert.deepEqual(source, before);
+});
+
+test('a partial extra-pay calendar credits only its known month and discloses the unallocated remainder', () => {
+  const source = fixture(); source.familyPlan.extraPayMonths = {buyer2: [6], mother: [6, 12]};
+  const result = calculateFamilyTimeline(source, {startMonth: '2027-01', months: 12});
+  assert.equal(result.valid, true);
+  assert.equal(result.annualExtras.people.buyer2, 3400);
+  assert.equal(result.annualExtras.scheduledPeople.buyer2, 1700);
+  assert.equal(result.annualExtras.unallocatedPeople.buyer2, 1700);
+  assert.equal(result.annualExtras.scheduledTotal, 3900);
+  assert.equal(result.annualExtras.unallocatedTotal, 1700);
+  assert.deepEqual(result.annualExtras.pendingPeople, ['buyer2']);
+  assert.equal(result.months[5].people.buyer2.salaryExtra, 1700);
+  assert.equal(result.months[11].people.buyer2.salaryExtra, 0);
+  assert.equal(result.months[11].people.mother.salaryExtra, 1100);
+});
+
+test('a separate net extra-pay amount leaves ordinary salary, sharing and bank debt unchanged', () => {
+  const source = fixture(); source.budget.familyIncomeMonthly = 93;
+  source.familyPlan.extraPayMonths = {buyer2: [6, 12], mother: [6, 12]};
+  source.familyPlan.extraPayAmounts = {buyer2: 1500.25, mother: 1075};
+  const result = calculateFamilyTimeline(source, {startMonth: '2027-06', months: 1}), row = result.months[0];
+  assert.equal(result.valid, true);
+  assert.equal(row.people.buyer2.income, 1700);
+  assert.equal(row.people.buyer2.salaryExtra, 1500.25);
+  assert.equal(row.people.mother.income, 1193);
+  assert.equal(row.people.mother.salaryExtra, 1075);
+  assert.equal(row.people.mother.externalIncome, 2268);
+  assert.equal(result.annualExtras.people.buyer2, 3000.50);
+  assert.equal(result.annualExtras.people.mother, 2150);
+  assert.equal(result.persons.find(person => person.id === 'buyer2').extraPayAmountEstimated, false);
+  assert.ok(!result.warnings.some(warning => warning.includes('mismo neto')));
+});
+
+test('extra-pay calendar shapes and amounts reject invalid values without losing errors on normalization', () => {
+  for (const raw of [
+    {extraPayMonths: []}, {extraPayMonths: {buyer2: null}}, {extraPayMonths: {buyer2: [6, 6]}},
+    {extraPayMonths: {buyer2: [0, 12]}}, {extraPayMonths: {buyer2: [6, 13]}},
+    {extraPayMonths: {buyer2: [6.5]}}, {extraPayMonths: {buyer2: ['unknown']}},
+    {extraPayAmounts: []}, {extraPayAmounts: {buyer2: -1}}, {extraPayAmounts: {buyer2: ''}},
+    {extraPayAmounts: {buyer2: Infinity}},
+  ]) {
+    assert.equal(validateFamilyPlan(raw).valid, false, JSON.stringify(raw));
+    assert.equal(validateFamilyPlan(normalizeFamilyPlan(raw)).valid, false, JSON.stringify(raw));
+  }
+  const source = fixture(); source.familyPlan.extraPayMonths = {buyer1: [6]};
+  assert.equal(calculateFamilyTimeline(source).valid, false);
+  source.familyPlan.extraPayMonths = {buyer2: [6, 11, 12]};
+  assert.equal(calculateFamilyTimeline(source).valid, false);
+  source.familyPlan.extraPayMonths = {buyer2: [6, 12]};
+  source.familyPlan.extraPayAmounts = {buyer2: 0};
+  assert.equal(calculateFamilyTimeline(source).valid, true);
+  const raw = {extraPayMonths: {buyer2: [6, 12]}, extraPayAmounts: {buyer2: 1700}};
+  const normalized = normalizeFamilyPlan(raw); normalized.extraPayMonths.buyer2.push(1); normalized.extraPayAmounts.buyer2 = 1;
+  assert.deepEqual(raw, {extraPayMonths: {buyer2: [6, 12]}, extraPayAmounts: {buyer2: 1700}});
 });
 
 test('known personal debt end month is inclusive and explicit owner is respected', () => {
@@ -411,6 +531,8 @@ test('personal debt settlement changes monthly bank debt but extraordinary recei
   assert.equal(january.people.buyer1.personalExpense, 80);
   assert.equal(january.people.buyer1.income, 2300);
   assert.equal(january.people.buyer1.extraordinaryIncome, 3500);
+  assert.equal(january.people.buyer1.externalIncome, 5800);
+  assert.equal(january.people.buyer1.salaryExtra, 0);
   assert.equal(january.people.buyer1.debtSettlement, 2121);
   assert.equal(january.people.buyer1.reservedExtraordinary, 200);
   close(january.people.buyer1.cashRemaining - january.people.buyer1.remaining, 1179, .001);
@@ -643,4 +765,44 @@ test('explicit sister savings apply at the first owning month shown when purchas
   assert.equal(result.months[0].people.sister.savingsBalance, 0);
   assert.equal(result.months[1].people.sister.savingsUsed, 0);
   assert.ok(result.warnings.some(warning => warning.includes('primer mes de vivienda comprada mostrado')));
+});
+
+test('a scheduled extra salary covers a sister deficit before using her savings or requesting family support', () => {
+  const source = sisterSupportFixture();
+  source.familyPlan.sisterSupport = {enabled: true, savingsAtPurchase: 100};
+  source.budget.householdIncomes.find(person => person.id === 'sister').payments = 14;
+  source.familyPlan.extraPayMonths = {sister: [6, 12]};
+  source.familyPlan.extraPayAmounts = {sister: 1000};
+  const row = calculateFamilyTimeline(source, {startMonth: '2027-06', months: 1}).months[0], sister = row.people.sister;
+  assert.ok(sister.remainingBeforeSupport < 0);
+  assert.equal(sister.salaryExtra, 1000);
+  assert.ok(sister.cashBeforeSupport > 0);
+  assert.equal(sister.cashRemaining, sister.cashBeforeSupport);
+  assert.equal(sister.savingsUsed, 0);
+  assert.equal(sister.savingsBalance, 100);
+  assert.equal(sister.familySupportReceived, 0);
+  assert.equal(row.needsFamilyTopUp, false);
+  for (const role of ['buyer1', 'buyer2', 'mother']) assert.equal(row.people[role].familySupportPaid, 0);
+  close(Object.values(row.people).reduce((sum, person) => sum + person.cashRemaining, 0), row.household.cashRemaining, .001);
+});
+
+test('a dated one-off receipt is available before sister support and does not become ordinary recurring income', () => {
+  const source = sisterSupportFixture();
+  source.familyPlan.sisterSupport = {enabled: true, savingsAtPurchase: 100};
+  source.familyPlan.extraordinaryReceipt = {enabled: true, month: '2027-01', amount: 1000, taxReserve: 50, owner: 'sister', confirmed: true};
+  const rows = calculateFamilyTimeline(source, {startMonth: '2027-01', months: 2}).months;
+  const january = rows[0].people.sister, february = rows[1].people.sister;
+  assert.equal(january.income, 100);
+  assert.equal(january.externalIncome, 1100);
+  assert.equal(january.familySupportReceived, 0);
+  assert.equal(january.savingsUsed, 0);
+  assert.equal(january.savingsBalance, 100);
+  assert.ok(january.cashRemaining > 0);
+  assert.equal(february.income, 100);
+  assert.equal(february.externalIncome, 100);
+  assert.equal(february.extraordinaryIncome, 0);
+  assert.equal(february.savingsUsed, 100);
+  assert.ok(february.familySupportReceived > 0);
+  assert.equal(february.cashRemaining, 0);
+  for (const row of rows) close(Object.values(row.people).reduce((sum, person) => sum + person.cashRemaining, 0), row.household.cashRemaining, .001);
 });

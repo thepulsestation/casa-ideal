@@ -657,6 +657,9 @@ test('expense and remaining views retain expanded months without writing financi
  await app.node('action-plan-table-modeexpenses').handlers.click();
  assert.equal(memory.getItem('casa-ideal.family-plan-table-mode'),'expenses');
  assert.match(app.html,/<option value="expenses" selected>/);assert.ok(app.html.includes('aria-expanded="true"'));
+ await app.node('action-plan-table-modeincome').handlers.click();
+ assert.equal(memory.getItem('casa-ideal.family-plan-table-mode'),'income');
+ assert.match(app.html,/<option value="income" selected>/);assert.ok(app.html.includes('aria-expanded="true"'));
  await app.node('action-toggle-plan-month'+month).handlers.click();
  assert.match(app.html,new RegExp('id="family-plan-details-'+month+'" class="family-plan-month-detail" hidden'));
  assert.equal(app.requests.filter(request=>request.method==='PATCH').length,0);

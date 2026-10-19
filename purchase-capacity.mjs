@@ -1,4 +1,4 @@
-import {calculateScenario, normalizeScenario} from './finance.mjs?v=25';
+import {calculateScenario, normalizeScenario} from './finance.mjs?v=26';
 
 const unique = values => [...new Set(values.filter(Boolean))];
 const moneyTolerance = 0.005;
@@ -126,6 +126,7 @@ export function calculatePurchaseCapacity(input = {}, options = {}) {
     ...(template.purchaseCosts.brokerQuotePending ? ['Honorarios de agencia sin presupuesto final'] : []),
   ]);
   const pendingAssumptions = unique([
+    ...(reference.budget.bankDebtProjected ? [`El esfuerzo usa las deudas previstas para ${reference.budget.bankDebtAsOfMonth}, tras las cancelaciones simuladas; el banco necesita comprobar su cancelación real.`] : []),
     ...(reference.budget.personalDebtCancellationAssumed ? ['El cobro extraordinario y las cancelaciones de deudas están pendientes. Antes de ese mes se mantienen las cuotas; el resultado posterior es una hipótesis condicionada al cobro y a los saldos reales.'] : []),
     'Tasación igual o superior al precio y valor fiscal sin incremento sobre ese precio; hay que comprobar cada vivienda.',
     'Se conservan los costes del escenario usado como referencia; otras viviendas pueden exigir más gastos o reformas.',
@@ -154,7 +155,7 @@ export function calculatePurchaseCapacity(input = {}, options = {}) {
     borrowerRegularIncome: reference.budget.regularIncome,
     debtLimitRatio: reference.budget.debtRatioLimit,
     debtLimitMonthly: reference.budget.regularIncome * reference.budget.debtRatioLimit,
-    existingDebtMonthly: reference.budget.existingDebtMonthly,
+    existingDebtMonthly: reference.budget.bankExistingDebtMonthly ?? reference.budget.existingDebtMonthly,
     familyRepaymentMonthly: reference.budget.borrowerFamilyRepaymentMonthly,
     borrowerDebtMonthly: reference.budget.borrowerDebtMonthly,
     borrowerDebtRatio: reference.budget.debtRatio,
@@ -175,7 +176,7 @@ export function calculatePurchaseCapacity(input = {}, options = {}) {
     debtLimitedBySearchCeiling: debtSearch?.ceilingReached ?? false,
     searchMaximumPrice: maxIndex * step,
     borrowerRegularIncome: first.budget.regularIncome,
-    existingDebtMonthly: first.budget.existingDebtMonthly,
+    existingDebtMonthly: first.budget.bankExistingDebtMonthly ?? first.budget.existingDebtMonthly,
     debtLimitMonthly: first.budget.regularIncome * first.budget.debtRatioLimit,
     loanLimit: financingAssumptions.loanLimit,
     summary, missingQuotes, pendingAssumptions, financingAssumptions, preclosing,
