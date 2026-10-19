@@ -238,6 +238,107 @@ test('mother expenses are her own salary cost after the children repayment, whil
   assert.ok(html.includes('Gasto neto · descontadas devoluciones'));
 });
 
+test('the fixed rental contribution replaces the percentage controls and keeps university separate', () => {
+  const {scenario, result} = fixture();
+  result.plan.currentAllocation = {enabled: true, motherContributionMonthly: 1100, brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true};
+  result.months[0].currentAllocationApplied = true;
+  const html = renderFamilyPlan(scenario, result, helpers);
+  assert.match(html, /data-field="familyPlan.currentAllocation.motherContributionMonthly" value="1100"/);
+  assert.match(html, /data-field="familyPlan.currentAllocation.brotherLivingShare" value="50" disabled/);
+  assert.match(html, /data-field="familyPlan.currentAllocation.includeUniversity" checked disabled/);
+  assert.match(html, /esta aportación sustituye el reparto porcentual de comida y suministros/);
+  assert.match(html, /mamá paga esos gastos y recibe este dinero/);
+  assert.match(html, /la universidad se asigna solo a tu hermano/);
+  assert.match(html, /Mamá · cubiertos con la aportación fija/);
+  assert.match(html, /No es un préstamo ni un ingreso nuevo del hogar/);
+  result.plan.currentAllocation.motherContributionMonthly = 0;
+  const percentage = renderFamilyPlan(scenario, result, helpers);
+  assert.match(percentage, /data-field="familyPlan.currentAllocation.brotherLivingShare" value="50">/);
+  assert.match(percentage, /data-field="familyPlan.currentAllocation.includeUniversity" checked>/);
+  assert.match(percentage, /Entre tu hermano y tu madre · mismo porcentaje/);
+});
+
+test('the brother to mother living contribution reconciles costs without increasing household income or expenses', () => {
+  const {scenario, result} = fixture(), row = result.months[0];
+  result.plan.currentAllocation = {enabled: true, motherContributionMonthly: 1100};
+  row.currentAllocationApplied = true;
+  row.people = Object.fromEntries(ids.map(id => [id, person({income: 0, common: 0, fixedPersonalDebt: 0, mortgage: 0, familyRepayment: 0, expenses: 0, remaining: 0, rent: 0, food: 0, utilities: 0, commonOther: 0, university: 0, publicTransportExpense: 0, livingContributionPaid: 0, livingContributionReceived: 0, personalCommitments: []})]));
+  Object.assign(row.people.buyer1, {income: 2000, rent: 1000, fixedPersonalDebt: 200, expenses: 1200, remaining: 800});
+  Object.assign(row.people.buyer2, {income: 1430, university: 565.63, publicTransportExpense: 16.67, livingContributionPaid: 1100, expenses: 1712.30, remaining: -282.30, personalCommitments: [{id: 'apple', label: 'Apple TV', amount: 10}, {id: 'gym', label: 'Gimnasio', amount: 15}, {id: 'crunchyroll', label: 'Crunchyroll', amount: 5}], fixedPersonalDebt: 0, personalCommitmentDebt: 0});
+  Object.assign(row.people.mother, {income: 1200, food: 500, utilities: 200, publicTransportExpense: 78.33, livingContributionReceived: 1100, expenses: 778.33, remaining: 1521.67});
+  row.household = {income: 4630, expenses: 2590.63, remaining: 2039.37, livingContributionTransfers: 1100};
+  const options = {...helpers, expandedMonths: new Set([row.month])};
+  const expenses = renderFamilyPlan(scenario, result, {...options, tableMode: 'expenses'});
+  const monthly = calendarRow(expenses, row.month);
+  assert.ok(monthly.includes('1712.30 €'));
+  assert.ok(monthly.includes('-321.67 €'));
+  assert.ok(monthly.includes('2590.63 €'));
+  const brotherCard = expenses.match(/<article class="family-plan-person has-deficit"><h3>buyer2<\/h3>(.*?)<\/article>/s)?.[1] || '';
+  assert.ok(brotherCard.includes('1712.30 €'));
+  assert.ok(brotherCard.includes('Aportación a mamá · incluida en pagos'));
+  const motherCard = expenses.match(/<article class="family-plan-person"><h3>mother<\/h3>(.*?)<\/article>/s)?.[1] || '';
+  assert.ok(motherCard.includes('-321.67 €'));
+  assert.ok(motherCard.includes('SALDO A FAVOR · APORTACIONES RECIBIDAS SUPERIORES A PAGOS'));
+  assert.ok(motherCard.includes('Pagos completos asignados</span><strong>778.33 €'));
+  assert.ok(motherCard.includes('Aportación de tu hermano recibida</span><strong>+ 1100.00 €'));
+  const detail = expenses.split('id="family-plan-details-' + row.month + '"')[1].split('</tbody>')[0];
+  const paid = detail.match(/<th scope="row" colspan="2">Aportación a mamá · gastos actuales<\/th>(.*?)<\/tr>/s)?.[1];
+  const received = detail.match(/<th scope="row" colspan="2">Aportación de tu hermano recibida<\/th>(.*?)<\/tr>/s)?.[1];
+  assert.equal(paid, '<td class="number">—</td><td class="number">1100.00 €</td><td class="number">—</td><td class="number">—</td><td class="number">—</td>');
+  assert.equal(received, '<td class="number">0.00 €</td><td class="number">0.00 €</td><td class="number">1100.00 €</td><td class="number">0.00 €</td><td class="number">—</td>');
+  assert.ok(detail.includes('Gasto neto · descontadas aportaciones recibidas'));
+  assert.ok(detail.includes('Apple TV'));
+  assert.ok(detail.includes('Crunchyroll'));
+  assert.ok(detail.includes('Gimnasio'));
+  assert.doesNotMatch(detail, /<table/);
+  for (const line of detail.matchAll(/<tr[^>]*>(.*?)<\/tr>/gs)) {
+    assert.equal((line[1].match(/<td /g) || []).length, 5, 'compact details retain four people and one household column');
+    assert.match(line[1], /<th scope="row" colspan="2">/);
+  }
+  const income = renderFamilyPlan(scenario, result, {...options, tableMode: 'income'});
+  assert.ok(calendarRow(income, row.month).includes('1200.00 €'));
+  assert.ok(calendarRow(income, row.month).includes('4630.00 €'));
+  assert.ok(!calendarRow(income, row.month).includes('2300.00 €'));
+  assert.match(income, /no aumenta los ingresos ni los gastos del hogar/);
+  const remaining = renderFamilyPlan(scenario, result, {...options, tableMode: 'remaining'});
+  assert.ok(calendarRow(remaining, row.month).includes('1521.67 €'));
+  assert.ok(calendarRow(remaining, row.month).includes('-282.30 €'));
+  assert.ok(calendarRow(remaining, row.month).includes('2039.37 €'));
+});
+
+test('an inclusive contribution shows university within the budget and only the remainder as money transferred to mother', () => {
+  const {scenario, result} = fixture(), row = result.months[0];
+  result.plan.currentAllocation = {enabled: true, motherContributionMonthly: 1100, contributionIncludesUniversity: true, brotherLivingShare: .5, includeUniversity: true};
+  row.currentAllocationApplied = true;
+  row.people = Object.fromEntries(ids.map(id => [id, person({income: 0, common: 0, fixedPersonalDebt: 0, mortgage: 0, familyRepayment: 0, expenses: 0, remaining: 0, rent: 0, food: 0, utilities: 0, commonOther: 0, university: 0, publicTransportExpense: 0, livingContributionPaid: 0, livingContributionReceived: 0, personalCommitments: []})]));
+  Object.assign(row.people.buyer1, {income: 2000, rent: 1000, fixedPersonalDebt: 200, expenses: 1200, remaining: 800});
+  Object.assign(row.people.buyer2, {income: 1430.06, university: 565.63, publicTransportExpense: 25, livingContributionPaid: 534.37, expenses: 1155, remaining: 275.06, personalCommitments: [{id: 'subscriptions', label: 'Pagos personales', amount: 30}], fixedPersonalDebt: 0, personalCommitmentDebt: 0});
+  Object.assign(row.people.mother, {income: 1200, food: 500, utilities: 300, commonOther: 38.34, publicTransportExpense: 70, livingContributionReceived: 534.37, expenses: 908.34, remaining: 826.03});
+  row.household = {income: 4630.06, expenses: 2728.97, remaining: 1901.09, livingContributionTransfers: 534.37};
+  const options = {...helpers, expandedMonths: new Set([row.month])};
+  const expenses = renderFamilyPlan(scenario, result, options);
+  assert.match(expenses, /Aportación total · universidad y mamá \/ mes/);
+  assert.match(expenses, /data-field="familyPlan.currentAllocation.contributionIncludesUniversity" checked/);
+  assert.match(expenses, /Aportación total: 1100.00 € = 565.63 € de universidad \+ 534.37 € a mamá/);
+  assert.match(expenses, /ya está incluida en el total indicado/);
+  assert.ok(calendarRow(expenses, row.month).includes('1155.00 €'));
+  assert.ok(calendarRow(expenses, row.month).includes('373.97 €'));
+  const detail = expenses.split('id="family-plan-details-' + row.month + '"')[1].split('</tbody>')[0];
+  const paid = detail.match(/<th scope="row" colspan="2">Aportación a mamá · gastos actuales<\/th>(.*?)<\/tr>/s)?.[1] || '';
+  assert.ok(paid.includes('534.37 €'));
+  assert.ok(!paid.includes('1100.00 €'));
+  const available = renderFamilyPlan(scenario, result, {...options, tableMode: 'remaining'});
+  assert.ok(calendarRow(available, row.month).includes('275.06 €'));
+  assert.ok(calendarRow(available, row.month).includes('826.03 €'));
+  const afterUniversity = structuredClone(row);
+  afterUniversity.month = '2027-07';
+  Object.assign(afterUniversity.people.buyer2, {university: 0, livingContributionPaid: 1100});
+  Object.assign(afterUniversity.people.mother, {livingContributionReceived: 1100, remaining: 1391.66});
+  result.months[2] = afterUniversity;
+  const after = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2027-07'});
+  assert.match(after, /Aportación total: 1100.00 € = 0.00 € de universidad \+ 1100.00 € a mamá/);
+});
+
 test('month disclosures render compact cost rows aligned with the main table without repeating its headers', () => {
   const {scenario, result} = fixture();
   result.months[0].people.buyer2.university = 315;

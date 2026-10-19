@@ -65,6 +65,8 @@ test('family plan defaults contain no private monetary figures and normalization
   assert.equal(plan.sisterJob.enabled, false);
   assert.equal(plan.currentAllocation.enabled, false);
   assert.equal(plan.currentAllocation.otherCostMode, 'unassigned');
+  assert.equal(plan.currentAllocation.motherContributionMonthly, 0);
+  assert.equal(plan.currentAllocation.contributionIncludesUniversity, false);
   assert.equal(validateFamilyPlan({}).valid, true);
 });
 
@@ -77,6 +79,9 @@ test('invalid money, dates, modes and nested shapes remain invalid after normali
     {currentAllocation: []}, {currentAllocation: {enabled: 'yes'}}, {currentAllocation: {rentPayer: 'unknown'}},
     {currentAllocation: {brotherLivingShare: -0.1}}, {currentAllocation: {brotherLivingShare: 1.1}},
     {currentAllocation: {brotherLivingShare: null}}, {currentAllocation: {otherCostMode: 'unknown'}},
+    {currentAllocation: {motherContributionMonthly: -1}}, {currentAllocation: {motherContributionMonthly: null}},
+    {currentAllocation: {motherContributionMonthly: Infinity}}, {currentAllocation: {motherContributionMonthly: ''}},
+    {currentAllocation: {contributionIncludesUniversity: 'yes'}}, {currentAllocation: {contributionIncludesUniversity: null}},
     {sisterSupport: []}, {sisterSupport: {enabled: 'yes'}}, {sisterSupport: {savingsAtPurchase: -1}},
     {sisterSupport: {savingsAtPurchase: null}}, {sisterSupport: {savingsAtPurchase: Infinity}},
     {sisterSupport: {savingsAtPurchase: ''}},
@@ -474,6 +479,161 @@ test('current university and living pool share the cost between mother and broth
   }
   assert.equal(october.household.unassignedExpenses, 0);
   close(Object.values(october.people).reduce((sum, person) => sum + person.remaining, 0), october.household.remaining, .001);
+});
+
+test('a fixed contribution to mother replaces the renting pool without counting the money twice', () => {
+  const source = fixture();
+  source.budget.foodMonthly = 500.01; source.budget.utilitiesMonthly = 200.02; source.budget.storageMonthly = 40.03;
+  source.familyPlan.purchaseMonth = '2027-03'; source.familyPlan.motherLoanStartMonth = '2027-01';
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true, motherContributionMonthly: '1100.01'};
+  const baseline = structuredClone(source); baseline.familyPlan.currentAllocation.motherContributionMonthly = 0;
+  const timeline = calculateFamilyTimeline(source, {startMonth: '2026-10', months: 8});
+  const original = calculateFamilyTimeline(baseline, {startMonth: '2026-10', months: 8});
+  assert.equal(timeline.valid, true);
+  assert.equal(timeline.plan.currentAllocation.motherContributionMonthly, 1100.01);
+  assert.ok(timeline.warnings.some(warning => warning.includes('sustituye el reparto por porcentajes')));
+  const october = timeline.months[0];
+  assert.equal(october.people.buyer1.rent, 1000);
+  for (const [field, expected] of [['food', 500.01], ['utilities', 200.02], ['commonOther', 40.03]]) {
+    assert.equal(october.people.mother[field], expected);
+    assert.equal(october.people.buyer2[field], 0);
+  }
+  assert.equal(october.people.buyer2.university, 450);
+  assert.equal(october.people.mother.university, 0);
+  assert.equal(october.people.buyer2.livingContributionPaid, 1100.01);
+  assert.equal(october.people.mother.livingContributionReceived, 1100.01);
+  assert.equal(october.people.mother.internalReceived, 0);
+  assert.equal(october.people.sister.expenses, 0);
+  for (const [index, row] of timeline.months.entries()) {
+    assert.deepEqual(row.household.externalIncome, original.months[index].household.externalIncome);
+    assert.equal(row.household.expenses, original.months[index].household.expenses);
+    assert.equal(row.household.cashRemaining, original.months[index].household.cashRemaining);
+    assert.equal(row.bankDebtMonthly, original.months[index].bankDebtMonthly);
+    assert.equal(row.bankDebtRatio, original.months[index].bankDebtRatio);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.expenses - person.internalReceived - person.livingContributionReceived, 0), row.household.expenses, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.cashRemaining, 0), row.household.cashRemaining, .001);
+  }
+});
+
+test('renting contributions conserve the household cash while revealing the brother ordinary-month deficit', () => {
+  const source = fixture(); source.budget.incomes[1].monthly = 1430.06;
+  source.familyPlan.purchaseMonth = '2027-03'; source.familyPlan.motherLoanStartMonth = '2027-01';
+  source.familyPlan.university.amount = 565.63;
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: 0, otherCostMode: 'living-pool', includeUniversity: false, motherContributionMonthly: 1100};
+  source.familyPlan.personalCommitments = [
+    {id: 'apple-tv', label: 'Apple TV', owner: 'buyer2', kind: 'expense', monthly: 10},
+    {id: 'gym', label: 'Gimnasio', owner: 'buyer2', kind: 'expense', monthly: 15},
+    {id: 'crunchyroll', label: 'Crunchyroll de la hermana', owner: 'buyer2', kind: 'expense', monthly: 5},
+  ];
+  source.familyPlan.publicTransport = {buyer2Quarterly: 50, sisterQuarterly: 50, motherMonthly: 70, sisterPayerMode: 'income-dependent'};
+  const withoutContribution = structuredClone(source); withoutContribution.familyPlan.currentAllocation.motherContributionMonthly = 0;
+  const october = calculateFamilyTimeline(source, {startMonth: '2026-10', months: 1}).months[0];
+  const baseline = calculateFamilyTimeline(withoutContribution, {startMonth: '2026-10', months: 1}).months[0];
+  assert.equal(october.people.buyer2.personalExpense, 30);
+  assert.equal(october.people.buyer2.fixedPersonalDebt, 0);
+  assert.equal(october.people.buyer2.publicTransportExpense, 25);
+  assert.equal(october.people.buyer2.expenses, 1720.63);
+  assert.equal(october.people.buyer2.cashRemaining, -290.57);
+  assert.equal(october.needsFamilyTopUp, true);
+  assert.equal(october.people.sister.expenses, 0);
+  assert.equal(october.people.sister.cashRemaining, 0);
+  close(october.people.buyer2.cashRemaining - baseline.people.buyer2.cashRemaining, -1100, .001);
+  close(october.people.mother.cashRemaining - baseline.people.mother.cashRemaining, 1100, .001);
+  assert.equal(october.household.externalIncome, baseline.household.externalIncome);
+  assert.equal(october.household.expenses, baseline.household.expenses);
+  assert.equal(october.household.cashRemaining, baseline.household.cashRemaining);
+  assert.equal(october.bankDebtMonthly, baseline.bankDebtMonthly);
+  const result = calculateFamilyTimeline(source, {startMonth: '2026-10', months: 1});
+  assert.ok(result.warnings.some(warning => warning.includes('Su déficit queda visible')));
+});
+
+test('the fixed contribution ends at purchase and leaves the agreed worker ownership allocation unchanged', () => {
+  const source = fixture(); source.familyPlan.sharedCostMode = 'workers'; source.familyPlan.purchaseAllocation = 'shared-household';
+  source.familyPlan.purchaseMonth = '2027-03'; source.familyPlan.motherLoanStartMonth = '2027-01';
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true, motherContributionMonthly: 1100};
+  const baseline = structuredClone(source); baseline.familyPlan.currentAllocation.motherContributionMonthly = 0;
+  const result = calculateFamilyTimeline(source, {startMonth: '2027-02', months: 3});
+  const original = calculateFamilyTimeline(baseline, {startMonth: '2027-02', months: 3});
+  assert.equal(result.months[0].household.livingContributionTransfers, 1100);
+  for (const [index, row] of result.months.entries()) {
+    if (!index) continue;
+    assert.equal(row.household.livingContributionTransfers, 0);
+    for (const person of Object.values(row.people)) {
+      assert.equal(person.livingContributionPaid, 0);
+      assert.equal(person.livingContributionReceived, 0);
+    }
+    assert.deepEqual(row, original.months[index]);
+  }
+  source.familyPlan.currentAllocation.enabled = false;
+  assert.equal(calculateFamilyTimeline(source, {startMonth: '2027-02', months: 1}).months[0].household.livingContributionTransfers, 0);
+});
+
+test('a combined renting budget pays university first and transfers only the remainder to mother', () => {
+  const source = fixture(); source.budget.incomes[1].monthly = 1430.06;
+  source.familyPlan.purchaseMonth = '2027-03'; source.familyPlan.motherLoanStartMonth = '2027-01';
+  source.familyPlan.university.amount = 565.63;
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true, motherContributionMonthly: 1100, contributionIncludesUniversity: true};
+  source.familyPlan.personalCommitments = [
+    {id: 'apple-tv', label: 'Apple TV', owner: 'buyer2', kind: 'expense', monthly: 10},
+    {id: 'gym', label: 'Gimnasio', owner: 'buyer2', kind: 'expense', monthly: 15},
+    {id: 'crunchyroll', label: 'Crunchyroll', owner: 'buyer2', kind: 'expense', monthly: 5},
+  ];
+  source.familyPlan.publicTransport = {buyer2Quarterly: 50, sisterQuarterly: 50, motherMonthly: 70, sisterPayerMode: 'income-dependent'};
+  const result = calculateFamilyTimeline(source, {startMonth: '2026-10', months: 6}), october = result.months[0];
+  assert.equal(result.valid, true);
+  assert.equal(october.people.buyer2.university, 565.63);
+  assert.equal(october.people.buyer2.livingContributionPaid, 534.37);
+  assert.equal(october.people.mother.livingContributionReceived, 534.37);
+  assert.equal(october.household.livingContributionTransfers, 534.37);
+  assert.equal(october.people.mother.university, 0);
+  assert.equal(october.people.buyer2.food, 0);
+  assert.equal(october.people.buyer2.utilities, 0);
+  assert.equal(october.people.buyer2.expenses, 1155);
+  assert.equal(october.people.buyer2.cashRemaining, 275.06);
+  assert.equal(october.people.sister.expenses, 0);
+  assert.ok(result.warnings.some(warning => warning.includes('presupuesto del hermano incluye la universidad')));
+  const netTransfer = structuredClone(source);
+  netTransfer.familyPlan.currentAllocation.motherContributionMonthly = 534.37;
+  netTransfer.familyPlan.currentAllocation.contributionIncludesUniversity = false;
+  const comparison = calculateFamilyTimeline(netTransfer, {startMonth: '2026-10', months: 6});
+  for (const [index, row] of result.months.entries()) {
+    assert.deepEqual(row, comparison.months[index]);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.cashRemaining, 0), row.household.cashRemaining, .001);
+  }
+});
+
+test('the whole combined budget reaches mother after university ends if purchase has not occurred', () => {
+  const source = fixture(); source.familyPlan.purchaseMonth = '2027-09'; source.familyPlan.motherLoanStartMonth = '2027-09';
+  source.familyPlan.university = {amount: 565.63, endMonth: '2027-06'};
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true, motherContributionMonthly: 1100, contributionIncludesUniversity: true};
+  const rows = calculateFamilyTimeline(source, {startMonth: '2027-06', months: 4}).months;
+  assert.equal(rows[0].people.buyer2.university, 565.63);
+  assert.equal(rows[0].people.buyer2.livingContributionPaid, 534.37);
+  for (const row of rows.slice(1, 3)) {
+    assert.equal(row.people.buyer2.university, 0);
+    assert.equal(row.people.buyer2.livingContributionPaid, 1100);
+    assert.equal(row.people.mother.livingContributionReceived, 1100);
+    assert.equal(row.people.buyer2.food, 0);
+    close(row.people.buyer2.university + row.people.buyer2.livingContributionPaid, 1100, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.expenses - person.internalReceived - person.livingContributionReceived, 0), row.household.expenses, .001);
+  }
+  assert.equal(rows[3].household.livingContributionTransfers, 0);
+});
+
+test('a university bill larger than the combined budget keeps the transfer nonnegative and all tuition visible', () => {
+  const source = fixture(); source.familyPlan.purchaseMonth = '2027-03'; source.familyPlan.motherLoanStartMonth = '2027-03';
+  source.familyPlan.university.amount = 565.63;
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true, motherContributionMonthly: 500, contributionIncludesUniversity: true};
+  const result = calculateFamilyTimeline(source, {startMonth: '2026-10', months: 1}), october = result.months[0];
+  assert.equal(october.people.buyer2.livingContributionPaid, 0);
+  assert.equal(october.people.mother.livingContributionReceived, 0);
+  assert.equal(october.people.buyer2.university, 565.63);
+  assert.equal(october.people.mother.university, 0);
+  assert.equal(october.people.buyer2.food, 0);
+  assert.equal(october.people.buyer2.utilities, 0);
+  assert.equal(october.people.mother.food, 400);
+  assert.equal(october.people.mother.utilities, 200);
+  assert.ok(result.warnings.some(warning => warning.includes('universidad supera el presupuesto combinado')));
 });
 
 test('shared ownership costs equalize the common burden while preserving legal borrower debt and personal costs', () => {
