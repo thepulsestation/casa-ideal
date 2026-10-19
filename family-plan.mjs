@@ -1,6 +1,6 @@
-import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=32';
-import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=32';
-import {DEFAULT_RENT_CHANGE, normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=32';
+import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=33';
+import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=33';
+import {DEFAULT_RENT_CHANGE, normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=33';
 
 // This plan allocates cash between residents. It never changes the bank's
 // definition of debt. Covering a resident's deficit requires an explicit plan.
@@ -257,7 +257,7 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
     const hasUnassignedMode = currentAllocationApplied && plan.currentAllocation.otherCostMode === 'unassigned';
     const componentParts = Object.fromEntries(Object.entries(costs).map(([key, amount]) => [key,
       hasUnassignedMode && key === 'commonOther' ? ROLES.map(() => 0) : allocate(amount,
-        key === 'familyInsurance' ? costShares('workers', incomes) : !currentAllocationApplied ? shares : key === 'rent' ? rentShares : key === 'food' || key === 'utilities' || plan.currentAllocation.otherCostMode === 'living-pool' ? livingShares : costShares(plan.currentAllocation.otherCostMode, incomes))]));
+        key === 'familyInsurance' ? owning ? costShares('workers', incomes) : [0, 0, 1, 0] : !currentAllocationApplied ? shares : key === 'rent' ? rentShares : key === 'food' || key === 'utilities' || plan.currentAllocation.otherCostMode === 'living-pool' ? livingShares : costShares(plan.currentAllocation.otherCostMode, incomes))]));
     const unassignedExpenses = hasUnassignedMode ? costs.commonOther : 0;
     const hasUnassignedExpenses = unassignedExpenses === null || unassignedExpenses > 0;
     const common = total(Object.values(costs)), commonParts = ROLES.map((role, index) => total(Object.values(componentParts).map(parts => parts[index])));

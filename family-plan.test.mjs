@@ -48,7 +48,7 @@ const fixture = (overrides = {}) => normalizeScenario({
   ...overrides,
 });
 
-test('family insurance is shared among earners in both phases and personal insurance is charged only through February', () => {
+test('mother pays family insurance while renting, workers share it after purchase and personal insurance ends in February', () => {
  const source = fixture();
  source.familyPlan.purchaseMonth = '2027-06'; source.familyPlan.motherLoanStartMonth = '2027-04';
  source.familyPlan.sharedCostMode = 'workers'; source.familyPlan.purchaseAllocation = 'shared-household';
@@ -64,13 +64,15 @@ test('family insurance is shared among earners in both phases and personal insur
   close(row.household.expenses - prior.household.expenses, 243 + personal);
   close(prior.household.cashRemaining - row.household.cashRemaining, 243 + personal);
   for (const id of ['buyer1', 'buyer2', 'mother', 'sister']) {
-   const amount = id === 'sister' && row.people.sister.income === 0 ? 0 : share;
+   const amount = row.phase === 'renting' ? id === 'mother' ? 243 : 0 : id === 'sister' && row.people.sister.income === 0 ? 0 : share;
    assert.equal(row.people[id].familyInsurance, amount);
    close(row.people[id].expenses - prior.people[id].expenses, amount + (id === 'buyer1' ? personal : 0));
    assert.equal(row.people[id].personalExpense, id === 'buyer1' ? personal : 0);
   }
   assert.equal(row.bankDebtMonthly, prior.bankDebtMonthly);
   assert.equal(row.bankDebtRatio, prior.bankDebtRatio);
+  assert.equal(row.people.buyer2.livingContributionPaid, prior.people.buyer2.livingContributionPaid);
+  assert.equal(row.people.mother.livingContributionReceived, prior.people.mother.livingContributionReceived);
   close(Object.values(row.people).reduce((sum, person) => sum + person.expenses - person.internalReceived - person.livingContributionReceived, 0), row.household.expenses);
   close(Object.values(row.people).reduce((sum, person) => sum + person.cashRemaining, 0), row.household.cashRemaining);
  }
@@ -79,7 +81,7 @@ test('family insurance is shared among earners in both phases and personal insur
  close(previousSavings.totals.household - updatedSavings.totals.household, 243 * 8 + 30 * 5);
 });
 
-test('the family policy keeps its workers allocation when other current or owned costs use another split', () => {
+test('the family policy keeps its payer by phase when other current or owned costs use another split', () => {
  for (const sharedCostMode of ['equal', 'income', 'borrowers']) {
   const source = fixture(); source.familyPlan.sharedCostMode = sharedCostMode;
   source.familyPlan.purchaseAllocation = 'shared-household'; source.familyPlan.sisterJob.enabled = false;
@@ -89,7 +91,7 @@ test('the family policy keeps its workers allocation when other current or owned
   const before = calculateFamilyTimeline(source, {startMonth: '2026-10', months: 3}), after = calculateFamilyTimeline(insured, {startMonth: '2026-10', months: 3});
   assert.equal(after.valid, true);
   for (const [index, row] of after.months.entries()) {
-   for (const role of ['buyer1', 'buyer2', 'mother']) close(row.people[role].expenses - before.months[index].people[role].expenses, 81);
+   for (const role of ['buyer1', 'buyer2', 'mother']) close(row.people[role].expenses - before.months[index].people[role].expenses, row.phase === 'renting' ? role === 'mother' ? 243 : 0 : 81);
    assert.equal(row.people.sister.familyInsurance, 0);
    assert.equal(row.people.sister.expenses, before.months[index].people.sister.expenses);
    close(row.household.expenses - before.months[index].household.expenses, 243);

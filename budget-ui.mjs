@@ -1,4 +1,4 @@
-import {renderPropertyCosts} from './property-costs.mjs?v=32';
+import {renderPropertyCosts} from './property-costs.mjs?v=33';
 /** Family income and household expenses. Personal amounts live in the scenario. */
 export function renderBudget(s, result, { field, select, check, section, notice, row, euro, pct, resultSidebar, global = false }) {
   const b = result.budget;
@@ -67,7 +67,7 @@ export function renderBudget(s, result, { field, select, check, section, notice,
         ${field('Alimentación mensual · todo el hogar','budget.foodMonthly')}
         ${field('Coche y transporte mensual · todo el hogar','budget.carMonthly')}
         ${field('Trastero al mes','budget.storageMonthly',{hint:'Se mantiene igual en los dos presupuestos. No lo repitas en alquiler ni en otros gastos.'})}
-        ${field('Seguro familiar común al mes','budget.familyInsuranceMonthly',{hint:'Se mantiene al alquilar y al comprar. Se reparte por igual entre quienes tengan ingresos; no es deuda de los titulares ni un seguro bonificado de la hipoteca.'})}
+        ${field('Seguro familiar común al mes','budget.familyInsuranceMonthly',{hint:'Durante el alquiler lo paga mamá con su sueldo y la aportación que ya recibe de tu hermano. Desde la compra se reparte por igual entre quienes tengan ingresos; no es deuda de los titulares ni un seguro bonificado de la hipoteca.'})}
         ${field('Otros gastos de vida al mes','budget.otherMonthly',{hint:'Salud, ocio, suscripciones… Sin repetir el trastero ni la universidad del reparto mensual.'})}
       </div>
       <div class="breakdown">${row('Universidad · gasto educativo este mes',euro(b.universityMonthly??0,2))}</div><p class="fine-print">Se incluye una vez en el coste del hogar, hasta el último mes indicado. No se clasifica como préstamo. <button class="card-link" data-view="reparto">Editar importe, fechas y reparto →</button></p>
