@@ -30,6 +30,7 @@ test('a positive monthly balance does not conceal a purchase funding gap',()=>{
 test('family plan defaults contain no private monetary figures and normalization is detached', () => {
   assert.equal(DEFAULT_FAMILY_PLAN.university.amount, 0);
   assert.equal(DEFAULT_FAMILY_PLAN.sisterJob.amount, 0);
+  assert.deepEqual(DEFAULT_FAMILY_PLAN.sisterSupport, {enabled: false, savingsAtPurchase: 0});
   const raw = {university: {amount: 450, endMonth: '2027-06'}};
   const plan = normalizeFamilyPlan(raw);
   plan.university.amount = 1;
@@ -49,6 +50,9 @@ test('invalid money, dates, modes and nested shapes remain invalid after normali
     {currentAllocation: []}, {currentAllocation: {enabled: 'yes'}}, {currentAllocation: {rentPayer: 'unknown'}},
     {currentAllocation: {brotherLivingShare: -0.1}}, {currentAllocation: {brotherLivingShare: 1.1}},
     {currentAllocation: {brotherLivingShare: null}}, {currentAllocation: {otherCostMode: 'unknown'}},
+    {sisterSupport: []}, {sisterSupport: {enabled: 'yes'}}, {sisterSupport: {savingsAtPurchase: -1}},
+    {sisterSupport: {savingsAtPurchase: null}}, {sisterSupport: {savingsAtPurchase: Infinity}},
+    {sisterSupport: {savingsAtPurchase: ''}},
   ]) {
     assert.equal(validateFamilyPlan(raw).valid, false, JSON.stringify(raw));
     assert.equal(validateFamilyPlan(normalizeFamilyPlan(raw)).valid, false, JSON.stringify(raw));
@@ -503,4 +507,140 @@ test('income-dependent transport charges the sister only from her actual or simu
     assert.equal(row.bankDebtMonthly, prior.bankDebtMonthly);
     assert.equal(row.bankDebtRatio, prior.bankDebtRatio);
   }
+});
+
+const sisterSupportFixture = () => {
+  const source = fixture();
+  source.familyPlan.sharedCostMode = 'workers';
+  source.familyPlan.purchaseAllocation = 'shared-household';
+  source.familyPlan.purchaseMonth = '2026-12';
+  source.familyPlan.sisterJob.enabled = false;
+  source.budget.householdIncomes.find(person => person.id === 'sister').monthly = 100;
+  return source;
+};
+
+test('after purchase an explicit sister deficit is covered equally by the other three without changing household or bank debt', () => {
+  const source = sisterSupportFixture();
+  const baseline = calculateFamilyTimeline(source, {months: 6});
+  source.familyPlan.sisterSupport = {enabled: true, savingsAtPurchase: 0};
+  const before = structuredClone(source), supported = calculateFamilyTimeline(source, {months: 6});
+  assert.equal(supported.valid, true);
+  for (let index = 0; index < supported.months.length; index++) {
+    const row = supported.months[index], original = baseline.months[index];
+    const sister = row.people.sister, deficit = Math.max(0, -original.people.sister.remaining);
+    assert.equal(row.household.income, original.household.income);
+    assert.equal(row.household.expenses, original.household.expenses);
+    assert.equal(row.household.remaining, original.household.remaining);
+    assert.equal(row.bankDebtMonthly, original.bankDebtMonthly);
+    assert.equal(row.bankDebtRatio, original.bankDebtRatio);
+    assert.equal(sister.income, original.people.sister.income);
+    assert.equal(sister.expenses, original.people.sister.expenses);
+    assert.equal(sister.internalReceived, 0);
+    assert.equal(sister.remainingBeforeSupport, original.people.sister.remaining);
+    if (row.phase === 'renting') {
+      assert.equal(row.sisterSupportApplied, false);
+      assert.deepEqual(row.people, original.people);
+      assert.equal(sister.familySupportReceived, 0);
+    } else {
+      assert.equal(row.sisterSupportApplied, true);
+      assert.ok(deficit > 0);
+      assert.equal(sister.remaining, 0);
+      assert.equal(sister.familySupportReceived, deficit);
+      assert.equal(sister.remainingWithoutSavings, 0);
+      for (const role of ['buyer1', 'buyer2', 'mother']) {
+        close(row.people[role].familySupportPaid, deficit / 3, .011);
+        close(row.people[role].expenses - original.people[role].expenses, row.people[role].familySupportPaid, .001);
+        close(original.people[role].remaining - row.people[role].remaining, row.people[role].familySupportPaid, .001);
+        assert.equal(row.people[role].internalReceived, original.people[role].internalReceived);
+      }
+      close(['buyer1', 'buyer2', 'mother'].reduce((sum, role) => sum + row.people[role].familySupportPaid, 0), deficit, .001);
+    }
+    close(Object.values(row.people).reduce((sum, person) => sum + person.remaining, 0), row.household.remaining, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.expenses - person.internalReceived - person.familySupportReceived, 0), row.household.expenses, .001);
+  }
+  assert.deepEqual(source, before);
+});
+
+test('sister savings are drawn once across full, partial and depleted months before the family contributes', () => {
+  const source = sisterSupportFixture(), baseline = calculateFamilyTimeline(source, {months: 6});
+  const initialDeficit = -baseline.months[2].people.sister.remaining;
+  assert.ok(initialDeficit > 0);
+  const savings = Math.round(initialDeficit * 150) / 100;
+  source.familyPlan.sisterSupport = {enabled: true, savingsAtPurchase: savings};
+  const rows = calculateFamilyTimeline(source, {months: 6}).months;
+  const first = rows[2], second = rows[3], third = rows[4], fourth = rows[5];
+  assert.equal(rows[1].people.sister.savingsUsed, 0);
+  assert.equal(rows[1].people.sister.savingsBalance, savings);
+  assert.equal(first.people.sister.savingsUsed, initialDeficit);
+  assert.equal(first.people.sister.familySupportReceived, 0);
+  close(first.people.sister.savingsBalance, savings - initialDeficit, .001);
+  assert.equal(first.people.sister.remainingWithoutSavings, -initialDeficit);
+  close(second.people.sister.savingsUsed, savings - initialDeficit, .001);
+  close(second.people.sister.familySupportReceived + second.people.sister.savingsUsed, -second.people.sister.remainingBeforeSupport, .001);
+  assert.equal(second.people.sister.savingsBalance, 0);
+  for (const row of [third, fourth]) {
+    assert.equal(row.people.sister.savingsUsed, 0);
+    assert.equal(row.people.sister.savingsBalance, 0);
+    assert.equal(row.people.sister.familySupportReceived, -row.people.sister.remainingBeforeSupport);
+  }
+  for (const row of [first, second, third, fourth]) {
+    assert.equal(row.people.sister.remaining, 0);
+    assert.equal(row.people.sister.income, 100);
+    assert.equal(row.household.savingsUsed, row.people.sister.savingsUsed);
+    close(row.household.cashRemaining, row.household.remaining + row.household.savingsUsed, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.remaining, 0), row.household.remaining + row.household.savingsUsed, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.cashRemaining, 0), row.household.cashRemaining, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.expenses - person.internalReceived - person.familySupportReceived, 0), row.household.expenses, .001);
+  }
+  close(rows.reduce((sum, row) => sum + row.people.sister.savingsUsed, 0), savings, .001);
+});
+
+test('sister support never silently creates savings from a monthly margin or borrows purchase savings', () => {
+  const source = sisterSupportFixture();
+  source.cash.savings = 10000;
+  source.familyPlan.purchaseMonth = '2027-05';
+  source.familyPlan.motherLoanStartMonth = '2027-03';
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true};
+  source.familyPlan.sisterSupport = {enabled: true, savingsAtPurchase: 0};
+  const rows = calculateFamilyTimeline(source, {months: 10}).months;
+  assert.ok(rows.slice(0, 7).every(row => row.people.sister.remaining === 100));
+  const firstOwned = rows.find(row => row.phase === 'owning');
+  assert.ok(firstOwned.people.sister.remainingBeforeSupport < 0);
+  assert.equal(firstOwned.people.sister.savingsUsed, 0);
+  assert.equal(firstOwned.people.sister.savingsBalance, 0);
+  assert.equal(firstOwned.people.sister.familySupportReceived, -firstOwned.people.sister.remainingBeforeSupport);
+});
+
+test('sister support preserves unknown costs and honestly retains a donor deficit', () => {
+  const source = sisterSupportFixture();
+  source.familyPlan.sisterSupport = {enabled: true, savingsAtPurchase: 500};
+  source.familyLoan.rate = null;
+  const unknown = calculateFamilyTimeline(source, {months: 4});
+  const owned = unknown.months[2];
+  assert.equal(owned.people.sister.remaining, null);
+  assert.equal(owned.people.sister.familySupportReceived, 0);
+  assert.equal(owned.people.sister.savingsUsed, 0);
+  assert.equal(owned.people.sister.savingsBalance, 500);
+  assert.ok(unknown.warnings.some(warning => warning.includes('No se consumen ahorros')));
+
+  const insufficient = sisterSupportFixture();
+  insufficient.budget.incomes[0].monthly = 1;
+  insufficient.familyPlan.sisterSupport = {enabled: true, savingsAtPurchase: 0};
+  const supported = calculateFamilyTimeline(insufficient, {months: 4});
+  assert.equal(supported.months[2].people.sister.remaining, 0);
+  assert.ok(supported.months[2].people.buyer1.remaining < 0);
+  assert.equal(supported.months[2].needsFamilyTopUp, true);
+  assert.ok(supported.warnings.some(warning => warning.includes('deja a otra persona con saldo negativo')));
+});
+
+test('explicit sister savings apply at the first owning month shown when purchase is already in the past', () => {
+  const source = sisterSupportFixture();
+  source.familyPlan.sisterSupport = {enabled: true, savingsAtPurchase: 75.25};
+  const result = calculateFamilyTimeline(source, {startMonth: '2027-03', months: 2});
+  assert.equal(result.valid, true);
+  assert.equal(result.months[0].phase, 'owning');
+  assert.equal(result.months[0].people.sister.savingsUsed, 75.25);
+  assert.equal(result.months[0].people.sister.savingsBalance, 0);
+  assert.equal(result.months[1].people.sister.savingsUsed, 0);
+  assert.ok(result.warnings.some(warning => warning.includes('primer mes de vivienda comprada mostrado')));
 });

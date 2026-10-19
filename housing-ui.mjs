@@ -1,5 +1,5 @@
-import {safeImageUrl} from './housing.mjs?v=24';
-import {analyzeHome,rankHomes,getHousingHighlights,HOUSING_SORT_OPTIONS} from './property-analysis.mjs?v=24';
+import {safeImageUrl} from './housing.mjs?v=25';
+import {analyzeHome,rankHomes,getHousingHighlights,HOUSING_SORT_OPTIONS} from './property-analysis.mjs?v=25';
 export const hasBudgetEstimates=(s,r)=>Boolean(r.budget?.propertyCostsEstimated||r.budget?.assumedLoanTerms||r.cash?.purchaseFeesEstimated||r.familyLoan?.termsAssumed||s.familyLoan?.assumedTerms||r.icf?.hypothetical);
 export function renderPropertyGallery(images,name,esc){
  const safe=Array.isArray(images)?images.map(safeImageUrl).filter(Boolean).slice(0,8):[];

@@ -1,12 +1,13 @@
-import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=24';
-import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=24';
+import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=25';
+import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=25';
 
 // This plan allocates cash between residents. It never changes the bank's
-// definition of debt or silently makes one resident cover another's deficit.
+// definition of debt. Covering a resident's deficit requires an explicit plan.
 export const DEFAULT_FAMILY_PLAN = Object.freeze({
   sharedCostMode: 'equal', personalDebtOwner: 'buyer1', personalDebtEndMonth: null,
   university: {amount: 0, startMonth: null, endMonth: null},
   sisterJob: {enabled: false, amount: 0, startMonth: null},
+  sisterSupport: {enabled: false, savingsAtPurchase: 0},
   currentAllocation: {enabled: false, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'unassigned', includeUniversity: false},
   purchaseAllocation: 'owners', transportOwner: null, personalCommitments: [],
   extraordinaryReceipt: {enabled: false, month: null, amount: 0, taxReserve: 0, owner: 'buyer1', confirmed: false},
@@ -35,7 +36,7 @@ export function normalizeFamilyPlan(raw = {}) {
   plan.extraordinaryReceipt = personalPlanning.extraordinaryReceipt;
   plan.publicTransport = personalPlanning.publicTransport;
   errors.push(...personalPlanning.errors);
-  for (const key of ['university', 'sisterJob', 'currentAllocation']) {
+  for (const key of ['university', 'sisterJob', 'sisterSupport', 'currentAllocation']) {
     if (Object.hasOwn(raw, key) && !isRecord(raw[key])) errors.push(`El apartado ${key} debe ser un objeto válido.`);
     plan[key] = {...DEFAULT_FAMILY_PLAN[key], ...(isRecord(raw[key]) ? raw[key] : {})};
   }
@@ -61,6 +62,9 @@ export function normalizeFamilyPlan(raw = {}) {
     [plan.sisterJob.startMonth, 'El inicio del trabajo de la hermana'],
   ]) if (value !== null && !monthValid(value)) errors.push(`${label} necesita un mes válido con formato AAAA-MM.`);
   if (typeof plan.sisterJob.enabled !== 'boolean') errors.push('Indica si se simula el futuro trabajo de la hermana.');
+  if (typeof plan.sisterSupport.enabled !== 'boolean') errors.push('Indica si se cubre el déficit de la hermana después de comprar.');
+  if (!finite(plan.sisterSupport.savingsAtPurchase) || Number(plan.sisterSupport.savingsAtPurchase) < 0) errors.push('Los ahorros disponibles de la hermana deben ser un importe no negativo.');
+  else plan.sisterSupport.savingsAtPurchase = money(plan.sisterSupport.savingsAtPurchase);
   if (finite(plan.university.amount) && Number(plan.university.amount) > 0 && plan.university.endMonth === null) errors.push('Indica el último mes de pago de la universidad.');
   if (plan.sisterJob.enabled === true && (plan.sisterJob.startMonth === null || !finite(plan.sisterJob.amount) || Number(plan.sisterJob.amount) <= 0)) errors.push('El trabajo futuro necesita un mes de inicio y un ingreso mayor que cero.');
   if (monthValid(plan.university.startMonth) && monthValid(plan.university.endMonth) && monthIndex(plan.university.startMonth) > monthIndex(plan.university.endMonth)) errors.push('El inicio de la universidad debe ser anterior o igual a su último mes de pago.');
@@ -140,11 +144,15 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
   if (Number(scenario.budget.existingDebtMonthly) > 0 && plan.personalDebtEndMonth === null) warnings.push('La deuda personal se mantiene porque todavía no se ha indicado su último mes de pago.');
   if (Number(scenario.budget.familyExistingDebtMonthly) > 0) warnings.push('Las otras deudas de convivientes se atribuyen provisionalmente a mamá; confirma su titular.');
   if (Number(scenario.budget.familyIncomeMonthly) > 0) warnings.push('La aportación familiar adicional anterior se atribuye a mamá una sola vez; revisa su origen.');
-  if (plan.sharedCostMode === 'equal') warnings.push('Los gastos comunes se dividen entre cuatro incluso si alguien no tiene ingresos. Un saldo negativo necesita una aportación familiar acordada; no se redistribuye automáticamente.');
+  if (plan.sharedCostMode === 'equal') warnings.push('Los gastos comunes se dividen entre cuatro incluso si alguien no tiene ingresos. La cobertura de un saldo negativo solo se aplica cuando se ha activado expresamente.');
   if (plan.sharedCostMode === 'workers') warnings.push('En el reparto general, los gastos comunes se dividen por igual entre quienes tengan ingresos ese mes; una persona sin ingresos no recibe una parte.');
   if (plan.currentAllocation.enabled) warnings.push('Antes de comprar se aplica vuestro reparto actual: alquiler a su pagador, y comida y suministros entre mamá y el hermano. El reparto de los demás gastos actuales es una hipótesis editable.');
   if (plan.currentAllocation.enabled && plan.currentAllocation.includeUniversity) warnings.push('La universidad también se comparte entre mamá y el hermano antes de comprar; el reparto muestra el coste a cargo de cada uno, aunque el recibo lo pague el hermano.');
   if (plan.purchaseAllocation === 'shared-household') warnings.push('Después de comprar se comparte el coste neto de vivienda, universidad y vida común según el reparto elegido. Las deudas y gastos personales conservan su titular; las obligaciones legales de hipoteca y préstamo familiar no cambian.');
+  if (plan.sisterSupport.enabled) {
+    warnings.push('Después de comprar, el déficit mensual de la hermana utiliza primero sus ahorros indicados y el resto se reparte entre los dos titulares y mamá. Son movimientos del presupuesto familiar: no cambian la deuda bancaria ni generan ingresos nuevos.');
+    warnings.push('Los ahorros de la hermana se consumen una sola vez desde el primer mes de vivienda comprada mostrado. Los márgenes positivos futuros no se añaden automáticamente a esos ahorros.');
+  }
   if (['buyer2Monthly', 'motherMonthly', 'sisterMonthly'].some(key => plan.publicTransport[key] > 0)) {
     warnings.push('El transporte público figura como provisión mensual. Los abonos trimestrales pueden cobrarse de una vez; sin fechas de renovación no se asignan a un mes de cobro concreto.');
     if (plan.publicTransport.sisterPayerMode === 'income-dependent') warnings.push('Mientras la hermana no tenga ingresos, mamá y el hermano cubren su transporte según el reparto acordado. Cuando tenga ingresos, lo paga ella, tanto de alquiler como después de comprar.');
@@ -175,6 +183,7 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
   const ownedCosts = {rent: 0, food: foodMonthly, utilities: calculated.budget.utilitiesMonthly,
     commonOther: total([calculated.budget.propertyOverheadMonthly, otherLife])};
   const missingPayments = motherSchedule === null || calculated.motherTransfer.mode === 'family-loan' && calculated.motherTransfer.amount > 0 && transferSchedule === null;
+  let sisterSavingsBalance = plan.sisterSupport.enabled ? plan.sisterSupport.savingsAtPurchase : 0;
   const rows = Array.from({length: months}, (_, offset) => {
     const month = start + offset, owning = month >= purchase;
     const commitmentState = calculatePersonalCommitments(plan, {asOfMonth: monthString(month)});
@@ -211,6 +220,7 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
         publicTransportExpense: publicTransport.byOwner[person.id],
         mortgage: mortgageParts[index], familyRepayment: familyParts[index], motherBankPayment: person.id === 'mother' ? motherBankPayment : 0,
         internalReceived: person.id === 'mother' ? familyRepayment : 0, icfRepayment: icfParts[index], householdRedistribution: 0,
+        familySupportPaid: 0, familySupportReceived: 0, savingsUsed: 0, savingsBalance: 0,
         extraordinaryIncome: commitmentState.extraordinaryIncomeByOwner[person.id], debtSettlement: commitmentState.debtSettlementByOwner[person.id], reservedExtraordinary: commitmentState.reservedExtraordinaryByOwner[person.id]};
       entry.expenses = total([entry.common, entry.fixedPersonalDebt, entry.personalExpense, entry.transportExpense, entry.publicTransportExpense, entry.university, entry.mortgage, entry.familyRepayment, entry.motherBankPayment, entry.icfRepayment]);
       entry.remaining = entry.expenses === null || entry.internalReceived === null ? null : money(entry.income + entry.internalReceived - entry.expenses);
@@ -228,6 +238,34 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
         entry.cashRemaining = entry.remaining === null ? null : money(entry.remaining + entry.extraordinaryIncome - entry.debtSettlement - entry.reservedExtraordinary);
       });
     }
+    // Cover only the known ordinary deficit. The stock is explicit savings,
+    // separate from purchase savings and from uncommitted monthly margins.
+    for (const entry of Object.values(people)) {
+      entry.remainingBeforeSupport = entry.remaining;
+      entry.remainingWithoutSavings = entry.remaining;
+    }
+    const sisterSupportApplied = owning && plan.sisterSupport.enabled;
+    if (sisterSupportApplied && people.sister.remaining !== null && people.sister.remaining < 0) {
+      const deficit = money(-people.sister.remaining);
+      const savingsUsed = Math.min(sisterSavingsBalance, deficit);
+      sisterSavingsBalance = money(sisterSavingsBalance - savingsUsed);
+      const familySupport = money(deficit - savingsUsed);
+      const donorParts = allocate(familySupport, [1, 1, 1]);
+      for (const [index, role] of ['buyer1', 'buyer2', 'mother'].entries()) {
+        const entry = people[role];
+        entry.familySupportPaid = donorParts[index];
+        entry.expenses = total([entry.expenses, entry.familySupportPaid]);
+        entry.remaining = entry.remaining === null ? null : money(entry.remaining - entry.familySupportPaid);
+        entry.remainingWithoutSavings = entry.remaining;
+        entry.cashRemaining = entry.cashRemaining === null ? null : money(entry.cashRemaining - entry.familySupportPaid);
+      }
+      people.sister.familySupportReceived = familySupport;
+      people.sister.savingsUsed = savingsUsed;
+      people.sister.remainingWithoutSavings = money(people.sister.remaining + familySupport);
+      people.sister.remaining = money(people.sister.remainingWithoutSavings + savingsUsed);
+      people.sister.cashRemaining = people.sister.cashRemaining === null ? null : money(people.sister.cashRemaining + familySupport + savingsUsed);
+    }
+    people.sister.savingsBalance = sisterSavingsBalance;
     const commitmentDebt = total(Object.values(commitmentState.debtByOwner)), commitmentExpense = total(Object.values(commitmentState.expenseByOwner));
     const householdExpenses = total([common, personal, money(scenario.budget.familyExistingDebtMonthly), commitmentDebt, commitmentExpense, personalTransport, publicTransport.total, university, mortgage, motherBankPayment, icf]);
     const householdIncome = total(incomes), borrowerIncome = money(incomes[0] + incomes[1]);
@@ -236,16 +274,19 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
       internalTransfers: familyRepayment, common, ...costs, unassignedExpenses, mortgage, motherBankPayment, fixedPersonalDebt: money(personal + Number(scenario.budget.familyExistingDebtMonthly) + commitmentDebt), university, icfRepayment: icf,
       personalCommitmentDebt: commitmentDebt, personalExpense: commitmentExpense, transportExpense: personalTransport,
       publicTransportExpense: publicTransport.total,
+      familySupportTransfers: people.sister.familySupportReceived, savingsUsed: people.sister.savingsUsed,
       extraordinaryIncome: total(Object.values(commitmentState.extraordinaryIncomeByOwner)), debtSettlement: total(Object.values(commitmentState.debtSettlementByOwner)), reservedExtraordinary: total(Object.values(commitmentState.reservedExtraordinaryByOwner))};
-    household.cashRemaining = household.remaining === null ? null : money(household.remaining + household.extraordinaryIncome - household.debtSettlement - household.reservedExtraordinary);
+    household.cashRemaining = household.remaining === null ? null : money(household.remaining + household.extraordinaryIncome - household.debtSettlement - household.reservedExtraordinary + household.savingsUsed);
     const motherNetBankCost = motherBankPayment === null || familyRepayment === null ? null : money(motherBankPayment - familyRepayment);
-    return {month: monthString(month), phase, currentAllocationApplied, hasUnassignedExpenses, purchaseAllocationApplied: owning && plan.purchaseAllocation === 'shared-household', people, household, motherNetBankCost, bankDebtMonthly: borrowerDebt,
+    return {month: monthString(month), phase, currentAllocationApplied, hasUnassignedExpenses, sisterSupportApplied, purchaseAllocationApplied: owning && plan.purchaseAllocation === 'shared-household', people, household, motherNetBankCost, bankDebtMonthly: borrowerDebt,
       bankDebtRatio: borrowerDebt === null || borrowerIncome <= 0 ? null : borrowerDebt / borrowerIncome,
       needsFamilyTopUp: persons.some(person => people[person.id].remaining !== null && people[person.id].remaining < 0)};
   });
   if (plan.sharedCostMode === 'income' && rows.some(row => row.household.income <= 0)) warnings.push('Sin ingresos no puede calcularse el reparto proporcional; los saldos personales quedan pendientes.');
   if (rows.some(row => row.household.income <= 0 && row.household.common > 0 && (plan.sharedCostMode === 'workers' || row.currentAllocationApplied && plan.currentAllocation.otherCostMode === 'workers'))) warnings.push('Sin ninguna persona con ingresos no puede repartirse el gasto entre quienes cobran; los saldos correspondientes quedan pendientes.');
   if (rows.some(row => row.hasUnassignedExpenses)) warnings.push('Hay otros gastos actuales sin pagador asignado. Se cuentan en el total familiar, pero los saldos individuales todavía no descuentan esa parte: no todo ese saldo está disponible para ahorrar.');
+  if (plan.sisterSupport.enabled && rows.some(row => row.sisterSupportApplied && row.people.sister.remaining === null)) warnings.push('Faltan importes para calcular el déficit de la hermana. No se consumen ahorros ni se inventa una aportación familiar para esos meses.');
+  if (rows.some(row => row.household.familySupportTransfers > 0 && ['buyer1', 'buyer2', 'mother'].some(role => row.people[role].remaining !== null && row.people[role].remaining < 0))) warnings.push('El reparto de ayuda a la hermana deja a otra persona con saldo negativo en algún mes. La ayuda no resuelve la falta de dinero del conjunto familiar.');
   return {valid: true, validation: {valid: true, errors: []}, warnings, plan, persons, months: rows, annualExtras, extraordinarySettlement,
     purchaseMonth: monthString(purchase), motherLoanStartMonth: monthString(loanStart), purchaseMonthAssumed: plan.purchaseMonth === null,
     purchaseFundingGap,

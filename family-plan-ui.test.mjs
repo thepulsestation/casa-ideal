@@ -323,3 +323,82 @@ test('the current pool and future household contribution are editable without ch
   assert.doesNotMatch(html,/La universidad es gasto de tu hermano/);
   assert.match(html,/Mis pagos personales y la cancelación prevista/);
 });
+
+function supportedSisterFixture() {
+  const data = fixture();
+  data.result.plan.sisterSupport = {enabled: true, savingsAtPurchase: 90};
+  const row = data.result.months[1];
+  for (const id of ids) row.people[id] = person({
+    income: 1000, common: 300, fixedPersonalDebt: 0, university: 0, mortgage: 0,
+    familyRepayment: 0, motherBankPayment: 0, internalReceived: 0, icfRepayment: 0,
+    familySupportPaid: 20, familySupportReceived: 0, savingsUsed: 0, savingsBalance: 0,
+    expenses: 320, remaining: 680,
+  });
+  Object.assign(row.people.sister, {income: 500, common: 650, familySupportPaid: 0,
+    familySupportReceived: 60, savingsUsed: 90, savingsBalance: 0, expenses: 650, remaining: 0});
+  Object.assign(row.household, {income: 3500, expenses: 1550, remaining: 1950, familySupportTransfers: 60, savingsUsed: 90});
+  row.sisterSupportApplied = true;
+  return data;
+}
+
+test('sister deficit funding is editable and distinguishes available savings from purchase capital or future margins', () => {
+  const {scenario, result} = supportedSisterFixture();
+  const html = renderFamilyPlan(scenario, result, helpers);
+  assert.match(html, /data-field="familyPlan.sisterSupport.enabled" checked/);
+  assert.match(html, /data-field="familyPlan.sisterSupport.savingsAtPurchase" value="90"/);
+  assert.match(html, /Disponibles al inicio del periodo de vivienda comprada mostrado/);
+  assert.match(html, /Solo cubren sus déficits mensuales: no la entrada/);
+  assert.match(html, /No se presupone que ahorre automáticamente/);
+  assert.match(html, /La parte de tu hermana se cubre primero con sus ahorros y después entre vosotros tres/);
+  assert.match(html, /Este mes utiliza 90.00 € de ahorros/);
+  assert.match(html, /La ayuda es de 60.00 € en total/);
+  assert.doesNotMatch(html, /no redistribuye ese importe automáticamente/);
+  assert.doesNotMatch(html, /class="notice error family-plan-deficit"/);
+  const renting = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2026-12'});
+  assert.doesNotMatch(renting, /class="notice family-plan-support"/);
+  result.plan.sisterSupport.savingsAtPurchase = null;
+  assert.match(renderFamilyPlan(scenario, result, helpers), /data-field="familyPlan.sisterSupport.savingsAtPurchase" value=""/);
+});
+
+test('salary cost deducts sister help and her savings while compact rows retain her full expenses and each funding source', () => {
+  const {scenario, result} = supportedSisterFixture();
+  const html = renderFamilyPlan(scenario, result, {...helpers, expandedMonths: new Set(['2027-01'])});
+  const row = calendarRow(html, '2027-01');
+  assert.equal((row.match(/<td class="number">320.00 €<\/td>/g) || []).length, 3);
+  assert.ok(row.includes('<td class="number">500.00 €</td>'));
+  assert.ok(!row.includes('650.00 €'));
+  const detail = html.split('<tbody id="family-plan-details-2027-01"')[1]?.split('</tbody>')[0] || '';
+  const cost = label => detail.match(new RegExp('<th scope="row" colspan="2">' + label + '</th>(.*?)</tr>'))?.[1];
+  assert.equal(cost('Ayuda a tu hermana'), '<td class="number">20.00 €</td>'.repeat(3) + '<td class="number">—</td><td class="number">—</td>');
+  assert.equal(cost('Ayuda familiar recibida'), '<td class="number">0.00 €</td>'.repeat(3) + '<td class="number">60.00 €</td><td class="number">—</td>');
+  assert.equal(cost('Ahorros de tu hermana utilizados'), '<td class="number">0.00 €</td>'.repeat(3) + '<td class="number">90.00 €</td><td class="number">90.00 €</td>');
+  assert.ok(cost('Pagos completos').includes('<td class="number">650.00 €</td>'));
+  assert.ok(cost('Disponible para ahorrar').endsWith('<td class="number">1950.00 €</td>'));
+  assert.ok(cost('Margen del hogar con ahorros utilizados').endsWith('<td class="number">2040.00 €</td>'));
+  assert.ok(cost('Ahorros de tu hermana restantes'));
+  assert.doesNotMatch(detail, /<caption|<thead|<table/);
+  for (const match of detail.matchAll(/<tr[^>]*>(.*?)<\/tr>/g)) {
+    assert.match(match[1], /^<th scope="row" colspan="2">/);
+    assert.equal((match[1].match(/<td class="number">/g) || []).length, 5);
+  }
+  assert.match(html, /Margen conjunto · ingresos ordinarios/);
+  assert.match(html, /Margen incluyendo esos ahorros/);
+  assert.match(html, /no un ingreso nuevo ni un gasto adicional/);
+  const remaining = renderFamilyPlan(scenario, result, {...helpers, tableMode: 'remaining'});
+  assert.equal((calendarRow(remaining, '2027-01').match(/680.00 €/g) || []).length, 3);
+  assert.ok(calendarRow(remaining, '2027-01').includes('<td class="number">0.00 €</td>'));
+});
+
+test('unknown sister funding stays incomplete and donor deficits remain visible after the agreed help', () => {
+  const {scenario, result} = supportedSisterFixture();
+  result.months[1].people.sister.familySupportReceived = null;
+  result.months[1].people.buyer2.remaining = -20;
+  const html = renderFamilyPlan(scenario, result, {...helpers, expandedMonths: new Set(['2027-01'])});
+  assert.ok(calendarRow(html, '2027-01').includes('<td class="number">Por completar</td>'));
+  assert.match(html, /La ayuda a tu hermana ya está aplicada. Queda un déficit en otra persona/);
+  assert.doesNotMatch(html, /no redistribuye ese importe automáticamente/);
+  const detail = html.split('<tbody id="family-plan-details-2027-01"')[1]?.split('</tbody>')[0] || '';
+  const received = detail.match(/Ayuda familiar recibida<\/th>(.*?)<\/tr>/)?.[1] || '';
+  assert.ok(received.includes('Por completar'));
+  assert.doesNotMatch(html, /\bNaN\b|\bundefined\b/);
+});
