@@ -16,3 +16,13 @@ test('an unfunded settlement explicitly keeps monthly payments in place',()=>{
  assert.ok(html.includes('Las cuotas continúan en el calendario'));
  assert.ok(html.includes('2000.00 EUR'));
 });
+
+test('quarterly ticket prices remain exact and support follows income rather than the purchase date',()=>{
+ const html=renderPersonalCommitments({familyPlan:{publicTransport:{buyer2Quarterly:50,sisterQuarterly:50,buyer2Monthly:16.67,sisterMonthly:16.67,sisterPayerMode:'income-dependent',sisterWithoutIncomeMotherShare:.5,motherMonthly:70}}},{},{euro,esc});
+ assert.match(html,/data-field="familyPlan.publicTransport.buyer2Quarterly" data-nullable="true" value="50"/);
+ assert.match(html,/data-field="familyPlan.publicTransport.sisterQuarterly" data-nullable="true" value="50"/);
+ assert.ok(!html.includes('50.01'));
+ assert.ok(!html.includes('data-field="familyPlan.publicTransport.sisterMonthly"'));
+ assert.ok(html.includes('Sin ingresos: mamá y tu hermano. Con ingresos: tu hermana.'));
+ assert.ok(html.includes('data-field="familyPlan.publicTransport.sisterWithoutIncomeMotherShare"'));
+});

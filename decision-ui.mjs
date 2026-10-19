@@ -1,6 +1,6 @@
-import {calculateScenario, getAffordability, suggestFamilyLoanTerm, compareFamilyLoanTerms} from './finance.mjs?v=23';
-import {getCommuteIndicators} from './commute.mjs?v=23';
-import {familyLoanComparisonYears,familyLoanTermNotice,renderFamilyLoanReference} from './financing-ui.mjs?v=23';
+import {calculateScenario, getAffordability, suggestFamilyLoanTerm, compareFamilyLoanTerms} from './finance.mjs?v=24';
+import {getCommuteIndicators} from './commute.mjs?v=24';
+import {familyLoanComparisonYears,familyLoanTermNotice,renderFamilyLoanReference} from './financing-ui.mjs?v=24';
 
 export function adoptPurchaseProvision(s) {
  if(s.purchasePlanVersion===1)return s;

@@ -429,7 +429,7 @@ test('unfunded cancellation hypothesis retains debt installments and warns inste
   assert.ok(timeline.warnings.some(warning => warning.includes('no cubre todas las cancelaciones')));
 });
 
-test('public transport remains personal outside the household pool and a nonworking sister is not silently subsidized', () => {
+test('legacy public transport remains personal and preserves the saved before-purchase sister allocation', () => {
   const source = fixture(); source.familyPlan.sisterJob.enabled = false;
   source.familyPlan.sharedCostMode = 'workers'; source.familyPlan.purchaseAllocation = 'shared-household';
   source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true};
@@ -452,5 +452,55 @@ test('public transport remains personal outside the household pool and a nonwork
     assert.equal(row.household.common, prior.household.common);
     assert.equal(row.bankDebtMonthly, prior.bankDebtMonthly);
     close(Object.values(row.people).reduce((sum, person) => sum + person.remaining, 0), row.household.remaining, .001);
+  }
+});
+
+test('income-dependent transport charges the sister only from her actual or simulated income month', () => {
+  const source = fixture();
+  source.familyPlan.sharedCostMode = 'workers';
+  source.familyPlan.purchaseAllocation = 'shared-household';
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true};
+  source.familyPlan.purchaseMonth = '2026-12';
+  source.familyPlan.sisterJob = {enabled: true, amount: 500, startMonth: '2027-03'};
+  source.familyPlan.publicTransport = {buyer2Quarterly: 50, sisterQuarterly: 50, motherMonthly: 70, sisterPayerMode: 'income-dependent'};
+  const before = structuredClone(source), timeline = calculateFamilyTimeline(source, {months: 8});
+  assert.equal(timeline.valid, true);
+  for (const row of timeline.months) {
+    const working = row.month >= '2027-03';
+    assert.equal(row.people.sister.income, working ? 500 : 0);
+    assert.equal(row.people.sister.publicTransportExpense, working ? 16.67 : 0);
+    assert.equal(row.people.buyer2.publicTransportExpense, working ? 16.67 : 25);
+    assert.equal(row.people.mother.publicTransportExpense, working ? 70 : 78.34);
+    assert.equal(row.people.buyer1.publicTransportExpense, 0);
+    assert.equal(row.household.publicTransportExpense, 103.34);
+    if (!working) assert.equal(row.people.sister.expenses, 0, row.month);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.remaining, 0), row.household.remaining, .001);
+  }
+  assert.equal(timeline.months[2].phase, 'owning');
+  assert.equal(timeline.months[2].people.sister.publicTransportExpense, 0);
+  assert.ok(timeline.warnings.some(warning => warning.includes('Cuando tenga ingresos, lo paga ella')));
+  assert.deepEqual(source, before);
+
+  const disabled = structuredClone(source); disabled.familyPlan.sisterJob.enabled = false;
+  const withoutJob = calculateFamilyTimeline(disabled, {months: 8});
+  assert.ok(withoutJob.months.every(row => row.people.sister.expenses === 0 && row.people.sister.publicTransportExpense === 0));
+  const alreadyWorking = structuredClone(disabled);
+  alreadyWorking.budget.householdIncomes.find(person => person.id === 'sister').monthly = 300;
+  const employed = calculateFamilyTimeline(alreadyWorking, {months: 8});
+  assert.ok(employed.months.every(row => row.people.sister.publicTransportExpense === 16.67));
+
+  const earlyJob = structuredClone(source); earlyJob.familyPlan.sisterJob.startMonth = '2026-11';
+  const earlyTimeline = calculateFamilyTimeline(earlyJob, {months: 3});
+  assert.equal(earlyTimeline.months[1].phase, 'renting');
+  assert.equal(earlyTimeline.months[1].people.sister.publicTransportExpense, 16.67);
+
+  const legacy = structuredClone(source); legacy.familyPlan.publicTransport.sisterPayerMode = 'legacy';
+  const legacyTimeline = calculateFamilyTimeline(legacy, {months: 8});
+  for (let index = 0; index < timeline.months.length; index++) {
+    const row = timeline.months[index], prior = legacyTimeline.months[index];
+    assert.equal(row.household.expenses, prior.household.expenses);
+    assert.equal(row.household.remaining, prior.household.remaining);
+    assert.equal(row.bankDebtMonthly, prior.bankDebtMonthly);
+    assert.equal(row.bankDebtRatio, prior.bankDebtRatio);
   }
 });

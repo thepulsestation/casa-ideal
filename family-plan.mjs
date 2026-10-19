@@ -1,5 +1,5 @@
-import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=23';
-import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=23';
+import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=24';
+import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=24';
 
 // This plan allocates cash between residents. It never changes the bank's
 // definition of debt or silently makes one resident cover another's deficit.
@@ -10,7 +10,8 @@ export const DEFAULT_FAMILY_PLAN = Object.freeze({
   currentAllocation: {enabled: false, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'unassigned', includeUniversity: false},
   purchaseAllocation: 'owners', transportOwner: null, personalCommitments: [],
   extraordinaryReceipt: {enabled: false, month: null, amount: 0, taxReserve: 0, owner: 'buyer1', confirmed: false},
-  publicTransport: {buyer2Monthly: 0, motherMonthly: 0, sisterMonthly: 0, sisterBeforePurchaseMotherShare: .5},
+  publicTransport: {buyer2Monthly: 0, motherMonthly: 0, sisterMonthly: 0, buyer2Quarterly: null, sisterQuarterly: null,
+    sisterPayerMode: 'legacy', sisterWithoutIncomeMotherShare: .5, sisterBeforePurchaseMotherShare: .5},
   purchaseMonth: null, motherLoanStartMonth: null,
 });
 
@@ -144,7 +145,11 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
   if (plan.currentAllocation.enabled) warnings.push('Antes de comprar se aplica vuestro reparto actual: alquiler a su pagador, y comida y suministros entre mamá y el hermano. El reparto de los demás gastos actuales es una hipótesis editable.');
   if (plan.currentAllocation.enabled && plan.currentAllocation.includeUniversity) warnings.push('La universidad también se comparte entre mamá y el hermano antes de comprar; el reparto muestra el coste a cargo de cada uno, aunque el recibo lo pague el hermano.');
   if (plan.purchaseAllocation === 'shared-household') warnings.push('Después de comprar se comparte el coste neto de vivienda, universidad y vida común según el reparto elegido. Las deudas y gastos personales conservan su titular; las obligaciones legales de hipoteca y préstamo familiar no cambian.');
-  if (Object.values(plan.publicTransport).slice(0, 3).some(amount => Number(amount) > 0)) warnings.push('El transporte público figura como provisión mensual. Los abonos trimestrales pueden cobrarse de una vez; el reparto conserva los pagadores acordados incluso si una persona todavía no tiene sueldo.');
+  if (['buyer2Monthly', 'motherMonthly', 'sisterMonthly'].some(key => plan.publicTransport[key] > 0)) {
+    warnings.push('El transporte público figura como provisión mensual. Los abonos trimestrales pueden cobrarse de una vez; sin fechas de renovación no se asignan a un mes de cobro concreto.');
+    if (plan.publicTransport.sisterPayerMode === 'income-dependent') warnings.push('Mientras la hermana no tenga ingresos, mamá y el hermano cubren su transporte según el reparto acordado. Cuando tenga ingresos, lo paga ella, tanto de alquiler como después de comprar.');
+    else warnings.push('El reparto de transporte conserva los pagadores acordados, aunque una persona todavía no tenga sueldo.');
+  }
   warnings.push('IBI, residuos, seguros y mantenimiento anuales son provisiones mensuales; las fechas de cobro reales pueden ser distintas.');
   if (calculated.budget.incomplete) warnings.push('El presupuesto conserva importes pendientes de comprobar o cotizar; los saldos no son una aprobación bancaria.');
 
@@ -173,11 +178,11 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
   const rows = Array.from({length: months}, (_, offset) => {
     const month = start + offset, owning = month >= purchase;
     const commitmentState = calculatePersonalCommitments(plan, {asOfMonth: monthString(month)});
-    const publicTransport = calculatePublicTransport(plan, {owning});
     const phase = !owning ? 'renting' : calculated.icf.principal > 0 && month >= icfStart && month < icfStart + icfMonths ? 'icf' : 'owning';
     const incomes = incomeRows.map(row => money(Number(row?.monthly || 0)));
     incomes[2] = money(incomes[2] + Number(scenario.budget.familyIncomeMonthly));
     if (plan.sisterJob.enabled && month >= monthIndex(plan.sisterJob.startMonth)) incomes[3] = money(plan.sisterJob.amount);
+    const publicTransport = calculatePublicTransport(plan, {owning, sisterHasIncome: incomes[3] > 0});
     const shares = costShares(plan.sharedCostMode, incomes), costs = owning ? ownedCosts : currentCosts;
     const currentAllocationApplied = !owning && plan.currentAllocation.enabled;
     const livingShares = [0, plan.currentAllocation.brotherLivingShare, 1 - plan.currentAllocation.brotherLivingShare, 0];

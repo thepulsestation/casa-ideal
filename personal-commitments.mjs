@@ -44,25 +44,43 @@ export function normalizePersonalCommitments(rawPlan = {}) {
   if (extraordinaryReceipt.enabled && (!validMonth(extraordinaryReceipt.month) || !finite(extraordinaryReceipt.amount) || Number(extraordinaryReceipt.amount) <= 0)) errors.push('Para simular el cobro extraordinario indica su mes y un importe mayor que cero.');
   if (extraordinaryReceipt.enabled && personalCommitments.some(item => isRecord(item) && item.settleWithReceipt === true && item.owner !== extraordinaryReceipt.owner)) errors.push('Las deudas canceladas deben pertenecer a la persona que recibe el cobro extraordinario.');
   if (raw.publicTransport !== undefined && !isRecord(raw.publicTransport)) errors.push('El transporte público debe ser un objeto válido.');
-  const publicTransport = {buyer2Monthly: 0, motherMonthly: 0, sisterMonthly: 0, sisterBeforePurchaseMotherShare: .5, ...(isRecord(raw.publicTransport) ? structuredClone(raw.publicTransport) : {})};
+  const publicTransport = {buyer2Monthly: 0, motherMonthly: 0, sisterMonthly: 0, buyer2Quarterly: null, sisterQuarterly: null,
+    sisterPayerMode: 'legacy', sisterWithoutIncomeMotherShare: .5, sisterBeforePurchaseMotherShare: .5,
+    ...(isRecord(raw.publicTransport) ? structuredClone(raw.publicTransport) : {})};
+  for (const [quarterlyKey, monthlyKey] of [['buyer2Quarterly', 'buyer2Monthly'], ['sisterQuarterly', 'sisterMonthly']]) {
+    if (publicTransport[quarterlyKey] === null) continue;
+    if (!finite(publicTransport[quarterlyKey]) || Number(publicTransport[quarterlyKey]) < 0) errors.push('Los abonos trimestrales deben ser importes no negativos o quedar sin indicar.');
+    else {
+      publicTransport[quarterlyKey] = Number(publicTransport[quarterlyKey]);
+      publicTransport[monthlyKey] = money(publicTransport[quarterlyKey] / 3);
+    }
+  }
   for (const key of ['buyer2Monthly', 'motherMonthly', 'sisterMonthly']) {
     if (!finite(publicTransport[key]) || Number(publicTransport[key]) < 0) errors.push('Las provisiones mensuales de transporte público deben ser importes no negativos.');
     if (finite(publicTransport[key])) publicTransport[key] = Number(publicTransport[key]);
   }
+  if (!['legacy', 'income-dependent'].includes(publicTransport.sisterPayerMode)) errors.push('Elige si el transporte de la hermana cambia al comprar o cuando tenga ingresos.');
+  if (!finite(publicTransport.sisterWithoutIncomeMotherShare) || Number(publicTransport.sisterWithoutIncomeMotherShare) < 0 || Number(publicTransport.sisterWithoutIncomeMotherShare) > 1) errors.push('La parte del transporte de la hermana sin ingresos pagada por mamá debe estar entre el 0 % y el 100 %.');
+  if (finite(publicTransport.sisterWithoutIncomeMotherShare)) publicTransport.sisterWithoutIncomeMotherShare = Number(publicTransport.sisterWithoutIncomeMotherShare);
   if (!finite(publicTransport.sisterBeforePurchaseMotherShare) || Number(publicTransport.sisterBeforePurchaseMotherShare) < 0 || Number(publicTransport.sisterBeforePurchaseMotherShare) > 1) errors.push('La parte del transporte de la hermana pagada por mamá antes de comprar debe estar entre el 0 % y el 100 %.');
   if (finite(publicTransport.sisterBeforePurchaseMotherShare)) publicTransport.sisterBeforePurchaseMotherShare = Number(publicTransport.sisterBeforePurchaseMotherShare);
   return {personalCommitments, extraordinaryReceipt, publicTransport, errors: [...new Set(errors)]};
 }
 
-/** Monthly reserves for tickets; purchase only changes the agreed payer. */
-export function calculatePublicTransport(rawPlan = {}, {owning = false} = {}) {
+/** Monthly reserves for tickets, retaining legacy payer rules for saved plans. */
+export function calculatePublicTransport(rawPlan = {}, {owning = false, sisterHasIncome = false} = {}) {
   const {publicTransport, errors} = normalizePersonalCommitments(rawPlan), byOwner = byRole();
   if (errors.length) return {valid: false, errors, byOwner, total: null};
   const sisterCents = Math.round(publicTransport.sisterMonthly * 100);
-  const motherShareCents = owning ? 0 : Math.round(sisterCents * publicTransport.sisterBeforePurchaseMotherShare);
-  byOwner.buyer2 = money(publicTransport.buyer2Monthly);
+  const incomeDependent = publicTransport.sisterPayerMode === 'income-dependent';
+  const coveredWithoutIncome = incomeDependent && !sisterHasIncome;
+  const motherShareCents = incomeDependent
+    ? coveredWithoutIncome ? Math.round(sisterCents * publicTransport.sisterWithoutIncomeMotherShare) : 0
+    : owning ? 0 : Math.round(sisterCents * publicTransport.sisterBeforePurchaseMotherShare);
+  const brotherShareCents = coveredWithoutIncome ? sisterCents - motherShareCents : 0;
+  byOwner.buyer2 = money(publicTransport.buyer2Monthly + brotherShareCents / 100);
   byOwner.mother = money(publicTransport.motherMonthly + motherShareCents / 100);
-  byOwner.sister = money((sisterCents - motherShareCents) / 100);
+  byOwner.sister = money((sisterCents - motherShareCents - brotherShareCents) / 100);
   return {valid: true, errors: [], byOwner, total: money(Object.values(byOwner).reduce((sum, amount) => sum + amount, 0))};
 }
 

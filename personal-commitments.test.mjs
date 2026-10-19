@@ -130,3 +130,54 @@ test('public transport preserves cents, changes the agreed sister payer after pu
   assert.equal(owned.total, current.total);
   for (const raw of [{publicTransport: []}, {publicTransport: {motherMonthly: -1}}, {publicTransport: {sisterMonthly: null}}, {publicTransport: {sisterBeforePurchaseMotherShare: 1.1}}]) assert.equal(calculatePublicTransport(raw).valid, false);
 });
+
+test('income-dependent sister transport is fully covered until she has income in either housing phase', () => {
+  const source = {publicTransport: {buyer2Monthly: 15.25, motherMonthly: 55, sisterMonthly: 19.33, sisterPayerMode: 'income-dependent'}};
+  const before = structuredClone(source);
+  for (const owning of [false, true]) {
+    const noIncome = calculatePublicTransport(source, {owning, sisterHasIncome: false});
+    assert.deepEqual(noIncome.byOwner, {buyer1: 0, buyer2: 24.91, mother: 64.67, sister: 0});
+    const working = calculatePublicTransport(source, {owning, sisterHasIncome: true});
+    assert.deepEqual(working.byOwner, {buyer1: 0, buyer2: 15.25, mother: 55, sister: 19.33});
+    assert.equal(noIncome.total, 89.58);
+    assert.equal(working.total, noIncome.total);
+  }
+  assert.deepEqual(source, before);
+});
+
+test('quarterly ticket amounts remain exact while monthly reserves are derived and preserve cent allocations', () => {
+  const source = {publicTransport: {buyer2Quarterly: 50, sisterQuarterly: '50', motherMonthly: 70,
+    buyer2Monthly: 999, sisterMonthly: null, sisterPayerMode: 'income-dependent'}};
+  const normalized = normalizePersonalCommitments(source);
+  assert.deepEqual(normalized.errors, []);
+  assert.equal(normalized.publicTransport.buyer2Quarterly, 50);
+  assert.equal(normalized.publicTransport.sisterQuarterly, 50);
+  assert.equal(normalized.publicTransport.buyer2Monthly, 16.67);
+  assert.equal(normalized.publicTransport.sisterMonthly, 16.67);
+  const supported = calculatePublicTransport(source);
+  assert.deepEqual(supported.byOwner, {buyer1: 0, buyer2: 25, mother: 78.34, sister: 0});
+  assert.equal(supported.total, 103.34);
+  assert.deepEqual(calculatePublicTransport(source, {sisterHasIncome: true}).byOwner,
+    {buyer1: 0, buyer2: 16.67, mother: 70, sister: 16.67});
+  const legacy = normalizePersonalCommitments({publicTransport: {buyer2Monthly: 15.25, sisterMonthly: 19.33}});
+  assert.equal(legacy.publicTransport.buyer2Quarterly, null);
+  assert.equal(legacy.publicTransport.buyer2Monthly, 15.25);
+  assert.equal(legacy.publicTransport.sisterMonthly, 19.33);
+  assert.equal(legacy.publicTransport.sisterPayerMode, 'legacy');
+  assert.equal(normalizePersonalCommitments({publicTransport: {buyer2Quarterly: 0, buyer2Monthly: 50}}).publicTransport.buyer2Monthly, 0);
+});
+
+test('invalid quarterly amounts, support shares and payer modes cannot silently remove transport costs', () => {
+  for (const publicTransport of [
+    {buyer2Quarterly: -1}, {sisterQuarterly: ''}, {buyer2Quarterly: Infinity}, {sisterQuarterly: false},
+    {sisterPayerMode: 'unknown'}, {sisterPayerMode: null},
+    {sisterWithoutIncomeMotherShare: -.1}, {sisterWithoutIncomeMotherShare: 1.1}, {sisterWithoutIncomeMotherShare: null},
+  ]) assert.equal(calculatePublicTransport({publicTransport}).valid, false, JSON.stringify(publicTransport));
+  for (const share of [0, .25, 1]) {
+    const result = calculatePublicTransport({publicTransport: {sisterMonthly: 19.33, sisterPayerMode: 'income-dependent', sisterWithoutIncomeMotherShare: share}});
+    assert.equal(result.valid, true);
+    assert.equal(result.byOwner.sister, 0);
+    assert.equal(result.byOwner.buyer1, 0);
+    assert.equal(Math.round(result.byOwner.buyer2 * 100) + Math.round(result.byOwner.mother * 100), 1933);
+  }
+});
