@@ -10,6 +10,32 @@ import {
 
 const close = (actual, expected, tolerance = 0.005) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} ≠ ${expected}`);
 
+test('a dated rent update changes the rental comparison without changing ownership cost or bank debt', () => {
+  const source = normalizeScenario({budget: {currentRent: 1014.35}, familyPlan: {rentChange: {enabled: true, fromMonth: '2026-11', monthly: 1064}}});
+  const october = calculateScenario(source, {asOfMonth: '2026-10'});
+  const november = calculateScenario(source, {asOfMonth: '2026-11'});
+  assert.equal(october.valid, true); assert.equal(november.valid, true);
+  assert.equal(october.budget.currentRent, 1014.35);
+  assert.equal(november.budget.currentRent, 1064);
+  close(november.budget.currentComparable - october.budget.currentComparable, 49.65);
+  close(october.budget.comparisonToRent - november.budget.comparisonToRent, 49.65);
+  assert.equal(november.budget.totalMonthly, october.budget.totalMonthly);
+  assert.equal(november.budget.debtRatio, october.budget.debtRatio);
+  assert.equal(november.budget.regularIncome, october.budget.regularIncome);
+  assert.equal(source.budget.currentRent, 1014.35, 'the historical base rent is retained');
+  source.familyPlan.rentChange.enabled = false;
+  assert.equal(calculateScenario(source, {asOfMonth: '2026-11'}).budget.currentRent, 1014.35);
+});
+
+test('core financing validation rejects invalid dated rent updates', () => {
+  for (const rentChange of [null, [], {enabled: 'yes'}, {enabled: true}, {enabled: true, fromMonth: '2026-13', monthly: 1064},
+    {enabled: true, fromMonth: '2026-11', monthly: -1}, {monthly: Infinity}, {monthly: null}, {monthly: ''}]) {
+    const result = calculateScenario({familyPlan: {rentChange}});
+    assert.equal(result.valid, false, JSON.stringify(rentChange));
+    assert.ok(result.validation.errors.some(error => error.includes('alquiler')));
+  }
+});
+
 test('mortgage debt may use the purchase date while current household cash retains its real installments',()=>{
  const source=normalizeScenario({budget:{incomes:[{monthly:2000,payments:12},{monthly:1500,payments:14}],existingDebtMonthly:100},familyPlan:{purchaseMonth:'2027-03',personalCommitments:[{id:'temporary',label:'Temporary credit',owner:'buyer1',monthly:180,kind:'debt',settleWithReceipt:true,payoffEstimate:1700}],extraordinaryReceipt:{enabled:true,month:'2027-01',amount:2000,owner:'buyer1'}}});
  const today=calculateScenario(source,{asOfMonth:'2026-10'});

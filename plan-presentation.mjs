@@ -5,13 +5,13 @@ const position=value=>Number.isFinite(value)?Math.max(0,Math.min(value,1e7)):0;
 function normalize(value){
  const preferences=value?.preferences||{},viewport=value?.viewport;
  return {
-  preferences:{horizon:preferences.horizon===144?144:24,selectedMonth:month(preferences.selectedMonth),mode:['income','expenses','remaining'].includes(preferences.mode)?preferences.mode:'expenses',expandedMonths:[...new Set((Array.isArray(preferences.expandedMonths)?preferences.expandedMonths:[]).map(month).filter(Boolean))].slice(0,144)},
+  preferences:{horizon:preferences.horizon===144?144:24,selectedMonth:month(preferences.selectedMonth),mode:['income','expenses','remaining','savings'].includes(preferences.mode)?preferences.mode:'expenses',expandedMonths:[...new Set((Array.isArray(preferences.expandedMonths)?preferences.expandedMonths:[]).map(month).filter(Boolean))].slice(0,144)},
   viewport:viewport?{top:position(viewport.top),left:position(viewport.left),pageX:position(viewport.pageX),pageY:position(viewport.pageY),anchor:month(viewport.anchor),offset:Number.isFinite(viewport.offset)?viewport.offset:0}:null
  };
 }
 
 export function createPlanPresentation({window,document,storage}){
- const entries=new Map();let key=null,container=null,restoring=false,generation=0;
+ const entries=new Map();let key=null,container=null,restoring=false,pageOnly=false,generation=0;
  const calendar=()=>document.querySelector('.family-plan-calendar .table-wrap');
  function entry(id){
   if(!entries.has(id)){let saved;try{saved=JSON.parse(storage?.getItem(prefix+id));}catch{}entries.set(id,normalize(saved));}
@@ -19,7 +19,9 @@ export function createPlanPresentation({window,document,storage}){
  }
  function save(){if(!key)return;try{storage?.setItem(prefix+key,JSON.stringify(entry(key)));}catch{/* Still works in memory when browser storage is unavailable. */}}
  function capture(){
-  if(!key||!container||restoring||calendar()!==container)return;
+  if(!key||restoring)return;
+  if(pageOnly){entry(key).viewport={top:0,left:0,anchor:null,offset:0,...entry(key).viewport,pageX:position(window.scrollX),pageY:position(window.scrollY)};save();return;}
+  if(!container||calendar()!==container)return;
   const viewport={top:position(container.scrollTop),left:position(container.scrollLeft),pageX:position(window.scrollX),pageY:position(window.scrollY),anchor:null,offset:0};
   const bounds=container.getBoundingClientRect?.();
   if(bounds){
@@ -31,17 +33,17 @@ export function createPlanPresentation({window,document,storage}){
   }
   entry(key).viewport=viewport;save();
  }
- function beforeRender(){capture();generation++;container=null;restoring=false;}
- function restore(id,{page=true}={}){
-  key=id;container=calendar();if(!container)return;
-  container.addEventListener?.('scroll',capture,{passive:true});
+ function beforeRender(){capture();generation++;container=null;restoring=false;pageOnly=false;}
+ function restore(id,{page=true,table=true}={}){
+  key=id;pageOnly=!table;container=table?calendar():null;if(!container&&!pageOnly)return;
+  container?.addEventListener?.('scroll',capture,{passive:true});
   const viewport=entry(key).viewport;
   if(!viewport){capture();return;}
   const target=container,revision=++generation;restoring=true;
   function apply(){
    if(revision!==generation||container!==target)return;
-   target.scrollTop=viewport.top;target.scrollLeft=viewport.left;
-   if(viewport.anchor&&target.getBoundingClientRect){
+   if(target){target.scrollTop=viewport.top;target.scrollLeft=viewport.left;}
+   if(viewport.anchor&&target?.getBoundingClientRect){
     const row=target.querySelector('[data-action="toggle-plan-month"][data-id="'+viewport.anchor+'"]')?.closest('tr');
     if(row)target.scrollTop+=row.getBoundingClientRect().top-target.getBoundingClientRect().top-viewport.offset;
    }

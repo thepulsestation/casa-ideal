@@ -109,3 +109,14 @@ test('missing anchor months fall back to the saved numeric viewport safely',()=>
  view.presentation.beforeRender();view.container=calendar(view.window,{months:['2030-01','2030-02']});view.presentation.restore('home');view.frame();
  assert.equal(view.container.scrollTop,283);assert.equal(view.container.scrollLeft,31);
 });
+
+
+test('the savings graph saves its page position without overwriting the monthly table scroll',()=>{
+ const view=harness();view.window.scrollY=900;view.container=calendar(view.window,{scrollTop:283,scrollLeft:75});view.presentation.restore('home');
+ view.presentation.beforeRender();view.container=null;view.presentation.setPreferences('home',{mode:'savings',horizon:24,expandedMonths:['2026-12']});view.presentation.restore('home',{table:false});view.frame();
+ view.window.scrollY=1200;view.emit('scroll');
+ const reload=harness(view.storage);reload.presentation.restore('home',{table:false});reload.frame();
+ assert.equal(reload.window.scrollY,1200);assert.equal(reload.presentation.preferences('home').mode,'savings');
+ reload.presentation.beforeRender();reload.container=calendar(reload.window);reload.presentation.restore('home');reload.frame();
+ assert.equal(reload.container.scrollTop,283);assert.equal(reload.container.scrollLeft,75);assert.equal(reload.window.scrollY,1200);
+});

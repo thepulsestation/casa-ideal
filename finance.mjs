@@ -1,5 +1,6 @@
-import {calculatePreclosing} from './preclosing.mjs?v=30';
-import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=30';
+import {calculatePreclosing} from './preclosing.mjs?v=31';
+import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=31';
+import {normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=31';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -545,6 +546,7 @@ export function validateScenario(input = {}) {
   }
   const personalPlan = normalizePersonalCommitments(s.familyPlan ?? {});
   errors.push(...personalPlan.errors);
+  errors.push(...normalizeRentChange(s.familyPlan?.rentChange).errors);
   if (s.familyPlan?.personalDebtEndMonth != null && !isMonth(s.familyPlan.personalDebtEndMonth)) errors.push('El final de la deuda personal necesita un mes válido con formato AAAA-MM.');
   if (s.familyPlan?.usePurchaseDebtDate !== undefined && typeof s.familyPlan.usePurchaseDebtDate !== 'boolean') errors.push('La elección de deudas para el mes de compra debe ser verdadera o falsa.');
   numeric(s.budget.debtRatioLimit, 'Límite endeudamiento', 0.01, 1);
@@ -831,7 +833,7 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
   const totalMonthly = homeMonthly + knownFamilyPayment + existingDebt + familyExistingDebt + householdMonthly + personalExpenseMonthly;
   const debtRatio = regularIncome > 0 ? borrowerDebtMonthly / regularIncome : null;
   const familyDebtRatio = actualRegularIncome > 0 ? totalDebtMonthly / actualRegularIncome : null;
-  const currentRent = nonnegative(s.budget.currentRent);
+  const currentRent = currentRentForMonth(nonnegative(s.budget.currentRent), s.familyPlan?.rentChange, asOfMonth);
   const currentComparable = currentRent + currentUtilitiesMonthly + existingDebt + familyExistingDebt + householdMonthly + personalExpenseMonthly + nonnegative(s.budget.currentOtherMonthly);
   if (personalCommitments.extraordinarySettlement.planned) warnings.push('La cancelación de deudas depende del cobro extraordinario previsto y de los saldos reales. No aumenta la nómina ni los ahorros disponibles para la compra.');
   if (bankDebtProjected) warnings.push(`El esfuerzo hipotecario utiliza las deudas previstas para ${bankDebtAsOfMonth}; el presupuesto actual conserva las cuotas anteriores. La reducción requiere cancelar efectivamente las deudas antes del estudio del banco.`);

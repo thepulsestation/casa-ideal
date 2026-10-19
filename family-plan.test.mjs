@@ -47,6 +47,58 @@ const fixture = (overrides = {}) => normalizeScenario({
   ...overrides,
 });
 
+test('the rent change takes effect in November only and remains the agreed rent payer\'s expense', () => {
+  const source = fixture();
+  source.budget.currentRent = 1014.35;
+  source.familyPlan.purchaseMonth = '2027-06';
+  source.familyPlan.motherLoanStartMonth = '2027-06';
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool'};
+  source.familyPlan.rentChange = {enabled: true, fromMonth: '2026-11', monthly: '1064'};
+  const withChange = calculateFamilyTimeline(source, {startMonth: '2026-10', months: 10});
+  const baselineSource = structuredClone(source); baselineSource.familyPlan.rentChange.enabled = false;
+  const baseline = calculateFamilyTimeline(baselineSource, {startMonth: '2026-10', months: 10});
+  assert.equal(withChange.valid, true);
+  assert.equal(withChange.plan.rentChange.monthly, 1064);
+  assert.equal(withChange.months[0].people.buyer1.rent, 1014.35);
+  assert.equal(withChange.months[0].household.rent, 1014.35);
+  for (let i = 1; i < 8; i++) {
+    const row = withChange.months[i], before = baseline.months[i];
+    assert.equal(row.household.rent, 1064);
+    assert.equal(row.people.buyer1.rent, 1064);
+    close(row.people.buyer1.expenses - before.people.buyer1.expenses, 49.65);
+    close(row.household.expenses - before.household.expenses, 49.65);
+    close(before.household.cashRemaining - row.household.cashRemaining, 49.65);
+    for (const role of ['buyer2', 'mother', 'sister']) assert.equal(row.people[role].expenses, before.people[role].expenses);
+    assert.equal(row.household.income, before.household.income);
+    assert.equal(row.bankDebtRatio, before.bankDebtRatio);
+  }
+  for (let i = 8; i < 10; i++) {
+    const row = withChange.months[i], before = baseline.months[i];
+    assert.equal(row.phase, 'owning');
+    assert.equal(row.household.rent, 0);
+    assert.equal(row.people.buyer1.rent, 0);
+    assert.equal(row.household.expenses, before.household.expenses);
+    assert.equal(row.household.cashRemaining, before.household.cashRemaining);
+  }
+});
+
+test('dated rent defaults are detached and reject malformed amounts or dates', () => {
+  assert.deepEqual(DEFAULT_FAMILY_PLAN.rentChange, {enabled: false, fromMonth: null, monthly: 0});
+  assert.equal(DEFAULT_FAMILY_PLAN.savingsStartMonth, null);
+  const raw = {rentChange: {enabled: true, fromMonth: '2026-11', monthly: 1064}, savingsStartMonth: '2026-10'};
+  const normalized = normalizeFamilyPlan(raw);
+  normalized.rentChange.monthly = 100;
+  assert.equal(raw.rentChange.monthly, 1064);
+  assert.equal(validateFamilyPlan(raw).valid, true);
+  for (const value of [null, [], {enabled: 'yes'}, {enabled: true}, {enabled: true, fromMonth: '2026-13', monthly: 1064},
+    {enabled: true, fromMonth: '2026-11', monthly: -1}, {monthly: null}, {monthly: Infinity}, {monthly: ''}]) {
+    assert.equal(validateFamilyPlan({rentChange: value}).valid, false, JSON.stringify(value));
+    assert.equal(validateFamilyPlan(normalizeFamilyPlan({rentChange: value})).valid, false, JSON.stringify(value));
+  }
+  assert.equal(validateFamilyPlan({rentChange: {enabled: true, fromMonth: '2026-11', monthly: 0}}).valid, true);
+  assert.equal(validateFamilyPlan({savingsStartMonth: '2026-13'}).valid, false);
+});
+
 test('a positive monthly balance does not conceal a purchase funding gap',()=>{
  const source=fixture();source.familyLoan.maxAmount=5000;
  const result=calculateFamilyTimeline(source);

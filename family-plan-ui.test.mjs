@@ -522,3 +522,15 @@ test('unknown sister funding stays incomplete and donor deficits remain visible 
   assert.ok(received.includes('Por completar'));
   assert.doesNotMatch(html, /\bNaN\b|\bundefined\b/);
 });
+
+
+test('savings graph mode keeps all four choices and exposes dated rent and projection settings',()=>{
+ const {scenario,result}=fixture();result.plan.savingsStartMonth='2026-10';result.plan.rentChange={enabled:true,fromMonth:'2026-11',monthly:1064};scenario.budget={currentRent:1014.35};
+ const html=renderFamilyPlan(scenario,result,{...helpers,tableMode:'savings'});
+ assert.match(html,/data-action="plan-table-mode" data-id="savings" aria-pressed="true"/);
+ assert.match(html,/<option value="savings" selected>Gráfico/);
+ assert.match(html,/class="card savings-chart"/);assert.doesNotMatch(html,/family-plan-monthly-table/);
+ assert.match(html,/data-field="familyPlan.rentChange.monthly" value="1064"/);
+ assert.match(html,/data-field="familyPlan.rentChange.fromMonth" value="2026-11"/);
+ assert.match(html,/data-field="familyPlan.savingsStartMonth" value="2026-10"/);
+});

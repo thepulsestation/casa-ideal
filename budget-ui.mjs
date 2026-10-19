@@ -1,4 +1,4 @@
-import {renderPropertyCosts} from './property-costs.mjs?v=30';
+import {renderPropertyCosts} from './property-costs.mjs?v=31';
 /** Family income and household expenses. Personal amounts live in the scenario. */
 export function renderBudget(s, result, { field, select, check, section, notice, row, euro, pct, resultSidebar, global = false }) {
   const b = result.budget;
@@ -73,7 +73,7 @@ export function renderBudget(s, result, { field, select, check, section, notice,
     `)}
     ${!global?section('Los gastos propios de la casa que compraríais','IBI, residuos y comunidad o conservación. Usa recibos cuando los tengas; mientras tanto puedes probar una provisión.',renderPropertyCosts(s,result,{field,check,notice,row,euro})):notice('Este presupuesto se aplica a todas las viviendas. El IBI, la comunidad, los seguros y los préstamos de compra se ajustan dentro de cada vivienda.','info')}
     ${section(global?'Vuestro alquiler actual':'Alquilar o comprar, con el mismo presupuesto','No tienes que volver a rellenar agua, luz, internet, comida, transporte ni trastero.',`
-      <div class="form-grid">${field('Alquiler mensual actual','budget.currentRent')}
+      <div class="form-grid">${field(s.familyPlan?.rentChange?.enabled?'Alquiler base · antes de la subida':'Alquiler mensual actual','budget.currentRent',{hint:s.familyPlan?.rentChange?.enabled?'Hay una subida programada en Reparto y ahorro mensual. Cada mes del calendario aplica el alquiler que le corresponde.':''})}
         ${field('Otros gastos exclusivos de la vivienda actual / mes','budget.currentOtherMonthly',{hint:'Si pagas residuos, comunidad o IBI aparte del alquiler, introduce su equivalente mensual aquí. Agua, luz, internet, alimentación, transporte y trastero ya están incluidos.'})}
       </div>
       ${notice(b.sharedLivingCosts?'Se utilizan exactamente los mismos suministros y gastos de vida en ambos casos. La diferencia viene de alquiler frente a hipoteca, préstamo de mamá y gastos propios de la compra.':'Los gastos de vida y el trastero se mantienen iguales. Has activado suministros distintos en las opciones de abajo.','info')}

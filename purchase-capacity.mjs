@@ -1,4 +1,4 @@
-import {calculateScenario, getPurchaseProvisionAmount, normalizeScenario} from './finance.mjs?v=30';
+import {calculateScenario, getPurchaseProvisionAmount, normalizeScenario} from './finance.mjs?v=31';
 
 const unique = values => [...new Set(values.filter(Boolean))];
 const moneyTolerance = 0.005;

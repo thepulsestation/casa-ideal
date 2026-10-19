@@ -1,5 +1,6 @@
-import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=30';
-import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=30';
+import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=31';
+import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=31';
+import {DEFAULT_RENT_CHANGE, normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=31';
 
 // This plan allocates cash between residents. It never changes the bank's
 // definition of debt. Covering a resident's deficit requires an explicit plan.
@@ -8,6 +9,7 @@ export const DEFAULT_FAMILY_PLAN = Object.freeze({
   university: {amount: 0, startMonth: null, endMonth: null},
   sisterJob: {enabled: false, amount: 0, startMonth: null},
   sisterSupport: {enabled: false, savingsAtPurchase: 0},
+  rentChange: {...DEFAULT_RENT_CHANGE},
   currentAllocation: {enabled: false, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'unassigned', includeUniversity: false, motherContributionMonthly: 0, contributionIncludesUniversity: false},
   purchaseAllocation: 'owners', transportOwner: null, personalCommitments: [],
   extraordinaryReceipt: {enabled: false, month: null, amount: 0, taxReserve: 0, owner: 'buyer1', confirmed: false},
@@ -15,7 +17,7 @@ export const DEFAULT_FAMILY_PLAN = Object.freeze({
   extraPayAmounts: {buyer1: null, buyer2: null, mother: null, sister: null},
   publicTransport: {buyer2Monthly: 0, motherMonthly: 0, sisterMonthly: 0, buyer2Quarterly: null, sisterQuarterly: null,
     sisterPayerMode: 'legacy', sisterWithoutIncomeMotherShare: .5, sisterBeforePurchaseMotherShare: .5},
-  purchaseMonth: null, motherLoanStartMonth: null, usePurchaseDebtDate: false,
+  purchaseMonth: null, motherLoanStartMonth: null, savingsStartMonth: null, usePurchaseDebtDate: false,
 });
 
 const ROLES = ['buyer1', 'buyer2', 'mother', 'sister'];
@@ -38,6 +40,9 @@ export function normalizeFamilyPlan(raw = {}) {
   plan.extraordinaryReceipt = personalPlanning.extraordinaryReceipt;
   plan.publicTransport = personalPlanning.publicTransport;
   errors.push(...personalPlanning.errors);
+  const rentPlanning = normalizeRentChange(raw.rentChange);
+  plan.rentChange = rentPlanning.rentChange;
+  errors.push(...rentPlanning.errors);
   for (const key of ['university', 'sisterJob', 'sisterSupport', 'currentAllocation']) {
     if (Object.hasOwn(raw, key) && !isRecord(raw[key])) errors.push(`El apartado ${key} debe ser un objeto válido.`);
     plan[key] = {...DEFAULT_FAMILY_PLAN[key], ...(isRecord(raw[key]) ? raw[key] : {})};
@@ -79,7 +84,7 @@ export function normalizeFamilyPlan(raw = {}) {
   if (finite(plan.university.amount)) plan.university.amount = Number(plan.university.amount);
   if (finite(plan.sisterJob.amount)) plan.sisterJob.amount = Number(plan.sisterJob.amount);
   for (const [value, label] of [
-    [plan.purchaseMonth, 'La compra'], [plan.motherLoanStartMonth, 'El préstamo de mamá'],
+    [plan.purchaseMonth, 'La compra'], [plan.motherLoanStartMonth, 'El préstamo de mamá'], [plan.savingsStartMonth, 'El inicio de la previsión de ahorro'],
     [plan.personalDebtEndMonth, 'El final de la deuda personal'],
     [plan.university.startMonth, 'El inicio de la universidad'], [plan.university.endMonth, 'El final de la universidad'],
     [plan.sisterJob.startMonth, 'El inicio del trabajo de la hermana'],
@@ -225,7 +230,7 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
   const sharedLife = money(calculated.budget.householdMonthly - Number(calculated.budget.universityMonthly || 0));
   const personalTransport = plan.transportOwner === null ? 0 : money(scenario.budget.carMonthly);
   const foodMonthly = money(scenario.budget.foodMonthly), otherLife = money(sharedLife - foodMonthly - personalTransport);
-  const currentCosts = {rent: calculated.budget.currentRent, food: foodMonthly, utilities: calculated.budget.currentUtilitiesMonthly,
+  const currentCosts = {food: foodMonthly, utilities: calculated.budget.currentUtilitiesMonthly,
     commonOther: total([otherLife, Number(scenario.budget.currentOtherMonthly)])};
   const ownedCosts = {rent: 0, food: foodMonthly, utilities: calculated.budget.utilitiesMonthly,
     commonOther: total([calculated.budget.propertyOverheadMonthly, otherLife])};
@@ -241,7 +246,7 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
     const salaryExtras = persons.map((person, index) => person.extraPaymentMonths.includes(month % 12 + 1)
       ? money(plan.extraPayAmounts[person.id] ?? (index === 3 && plan.sisterJob.enabled && month >= monthIndex(plan.sisterJob.startMonth) ? plan.sisterJob.amount : Number(incomeRows[index]?.monthly || 0))) : 0);
     const publicTransport = calculatePublicTransport(plan, {owning, sisterHasIncome: incomes[3] > 0});
-    const shares = costShares(plan.sharedCostMode, incomes), costs = owning ? ownedCosts : currentCosts;
+    const shares = costShares(plan.sharedCostMode, incomes), costs = owning ? ownedCosts : {...currentCosts, rent: currentRentForMonth(scenario.budget.currentRent, plan.rentChange, monthString(month))};
     const currentAllocationApplied = !owning && plan.currentAllocation.enabled;
     const university = month <= (plan.university.endMonth === null ? -Infinity : monthIndex(plan.university.endMonth)) && (plan.university.startMonth === null || month >= monthIndex(plan.university.startMonth)) ? money(plan.university.amount) : 0;
     const contributionApplied = currentAllocationApplied && plan.currentAllocation.motherContributionMonthly > 0;

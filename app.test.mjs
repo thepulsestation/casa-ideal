@@ -682,3 +682,16 @@ test('adding, editing and removing a personal payment updates the shared budget 
  await app.node('action-remove-personal-commitment'+item.id).handlers.click();await app.flushTimers();
  assert.equal(app.server.get(profile.id).data.familyPlan.personalCommitments.length,0);
 });
+
+
+test('the savings graph is a presentation mode that retains the shared finances and returns to the table',async()=>{
+ const home=savedHome('home-graph');home.familyPlan={purchaseMonth:'2027-06',savingsStartMonth:'2026-10'};
+ const app=boot({hash:'#reparto',joined:true,scenarios:[home]});await app.loading;
+ await app.node('action-plan-table-modesavings').handlers.click();
+ assert.match(app.html,/class="card savings-chart"/);assert.match(app.html,/Compra prevista: junio de 2027/);
+ assert.ok(!app.html.includes('class="family-plan-monthly-table"'));
+ assert.equal(memory.getItem('casa-ideal.family-plan-table-mode'),'savings');
+ await app.node('action-plan-table-modeexpenses').handlers.click();
+ assert.match(app.html,/class="family-plan-monthly-table"/);
+ assert.equal(app.requests.filter(x=>['PATCH','POST'].includes(x.method)&&x.path==='/rest/v1/scenarios').length,0);
+});
