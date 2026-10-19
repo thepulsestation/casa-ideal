@@ -24,7 +24,7 @@ test('a family-only link contains exactly the invitation and public application 
 });
 
 test('versioned private fragments retain automatic access across navigation and bookmarks', () => {
-  for (const view of ['viviendas', 'resumen', 'compra', 'hipoteca', 'presupuesto', 'fuentes', 'familia']) {
+  for (const view of ['viviendas', 'resumen', 'compra', 'hipoteca', 'presupuesto', 'fuentes', 'familia', 'limite']) {
     const hash = buildFamilyHash(view, CODE, SCENARIO_ID);
     assert.deepEqual(parseFamilyRoute(hash), result(view, CODE, SCENARIO_ID, null, true, 2));
     const link = buildFamilyLink('https://example.com/app/?old=value', CODE, SCENARIO_ID, { view });

@@ -1,4 +1,4 @@
-import {getPurchaseProvisionAmount} from './finance.mjs?v=33';
+import {getPurchaseProvisionAmount} from './finance.mjs?v=34';
 
 const FEE_FIELDS = [['Tasación','appraisal'],['Abogado / asesoría','legal'],['Notaría de compraventa','notary'],['Registro de la compraventa','registry'],['Gestoría de compraventa','agency'],['Bróker / intermediación','broker'],['Derramas / otros gastos de compra','other']];
 

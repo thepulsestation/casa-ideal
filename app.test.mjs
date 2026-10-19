@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {parseFamilyRoute} from './family-access.mjs';
 import { normalizeScenario, calculateScenario } from './finance.mjs';
 import { buildFamilyHash } from './family-access.mjs';
 import {extractFamilyProfile} from './family-profile.mjs';
@@ -693,5 +694,26 @@ test('the savings graph is a presentation mode that retains the shared finances 
  assert.equal(memory.getItem('casa-ideal.family-plan-table-mode'),'savings');
  await app.node('action-plan-table-modeexpenses').handlers.click();
  assert.match(app.html,/class="family-plan-monthly-table"/);
+ assert.equal(app.requests.filter(x=>['PATCH','POST'].includes(x.method)&&x.path==='/rest/v1/scenarios').length,0);
+});
+
+test('the budget-neutral view opens its requested family home without writing a financial scenario',async()=>{
+ const home=savedHome('budget-ceiling-home');home.familyPlan={purchaseMonth:'2027-06',motherLoanStartMonth:'2027-04'};
+ const app=boot({hash:`#limite?codigo=${CODE}&acceso=2&entrar=1&vivienda=${home.id}`,joined:true,scenarios:[home]});await app.loading;
+ assert.match(app.html,/budget-neutral-card/);assert.match(app.html,/data-budget-neutral-mode="household"/);
+ assert.equal(parseFamilyRoute(app.location.hash).view,'limite');
+ assert.match(app.html,/id="neutral-home"/);
+ assert.equal(app.requests.filter(x=>['PATCH','POST'].includes(x.method)&&x.path==='/rest/v1/scenarios').length,0);
+});
+
+test('an overview personal-cost link opens that home in expense mode at the purchase month',async()=>{
+ const first=savedHome('first-cost-home'),second=savedHome('second-cost-home');
+ for(const home of [first,second])home.familyPlan={purchaseMonth:'2027-06',motherLoanStartMonth:'2027-04',savingsStartMonth:'2026-10'};
+ const app=boot({hash:`#viviendas?codigo=${CODE}&acceso=2&entrar=1&vivienda=${first.id}`,joined:true,scenarios:[first,second]});await app.loading;
+ await app.node('action-view-home-repartition'+second.id).handlers.click();
+ assert.equal(parseFamilyRoute(app.location.hash).view,'reparto');
+ assert.equal(parseFamilyRoute(app.location.hash).scenarioId,second.id);
+ assert.match(app.html,/<option value="2027-06" selected/);
+ assert.match(app.html,/<option value="expenses" selected/);
  assert.equal(app.requests.filter(x=>['PATCH','POST'].includes(x.method)&&x.path==='/rest/v1/scenarios').length,0);
 });

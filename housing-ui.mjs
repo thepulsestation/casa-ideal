@@ -1,5 +1,6 @@
-import {safeImageUrl} from './housing.mjs?v=33';
-import {analyzeHome,rankHomes,getHousingHighlights,HOUSING_SORT_OPTIONS} from './property-analysis.mjs?v=33';
+import {safeImageUrl} from './housing.mjs?v=34';
+import {analyzeHome,rankHomes,getHousingHighlights,HOUSING_SORT_OPTIONS} from './property-analysis.mjs?v=34';
+import {calculateMonthlyCostComparison as calculateDefaultMonthlyCostComparison} from './budget-neutral.mjs?v=34';
 export const hasBudgetEstimates=(s,r)=>Boolean(r.budget?.propertyCostsEstimated||r.budget?.assumedLoanTerms||r.cash?.purchaseFeesEstimated||r.familyLoan?.termsAssumed||s.familyLoan?.assumedTerms||r.icf?.hypothetical);
 export function renderPropertyGallery(images,name,esc){
  const safe=Array.isArray(images)?images.map(safeImageUrl).filter(Boolean).slice(0,8):[];
@@ -38,7 +39,39 @@ function travelLabel(trip){
 function highlightHtml(highlights,{euro,esc}){
  return highlights.length?`<div class="housing-highlights" aria-label="Destacadas por cada criterio">${highlights.map(({criterion,label,home})=>`<button type="button" class="housing-highlight" data-action="load" data-id="${esc(home.scenario.id)}"><span>${esc(label)}</span><strong>${esc(home.scenario.name||'Vivienda sin nombre')}</strong><small>${criterion==='monthly'?monthlyAmount(home,euro,esc)+' /mes':criterion==='price'?amount(home.metrics.price,euro,esc):'≈ '+Math.round(home.metrics.commuteMeanMinutes)+' min de media'}</small></button>`).join('')}</div>`:'';
 }
-export function renderHousingList(rows,{calculateScenario,euro,esc,selected=new Set(),cloudConnected=false,comparisonHtml='',hasDraft=false,sort='favorites',getCommuteIndicators}={}){
+const PERSON_COST_ROLES=[['buyer1','Tú'],['buyer2','Tu hermano'],['mother','Tu madre'],['sister','Tu hermana']];
+function purchaseMonthLabel(month){
+ if(typeof month!=='string'||!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))return '';
+ const [year,index]=month.split('-').map(Number);
+ return new Intl.DateTimeFormat('es-ES',{month:'long',year:'numeric'}).format(new Date(year,index-1,1));
+}
+function housingPersonCostData(s,calculateMonthlyCostComparison){
+ let comparison=null;
+ // Older/incomplete saved records must not acquire an invented distribution
+ // from the calculation engine's normalization defaults.
+ if(Array.isArray(s?.budget?.incomes)&&Array.isArray(s?.budget?.householdIncomes)){
+  try{comparison=calculateMonthlyCostComparison(s);}catch{}
+ }
+ const rows=PERSON_COST_ROLES.map(([id,label])=>{
+  const person=Array.isArray(comparison?.people)?comparison.people.find(row=>row?.id===id):null;
+  return {id,label:typeof person?.label==='string'&&person.label?person.label:label,cost:comparison?.valid===true?safeAmount(person?.purchaseCost):null};
+ });
+ const total=safeAmount(comparison?.purchaseTotal),known=comparison?.valid===true&&total!==null&&rows.every(row=>row.cost!==null)
+  &&Math.abs(rows.reduce((sum,row)=>sum+row.cost,0)-total)<.011;
+ const provisional=!known||comparison.incomplete===true,prefix=provisional?'≈ ':'';
+ const monthLabel=purchaseMonthLabel(comparison?.month||s?.familyPlan?.purchaseMonth);
+ return {rows,total,known,provisional,prefix,monthLabel};
+}
+/** Net contributions reconcile to the family's external expenses, without counting internal repayments twice. */
+export function renderHousingPersonCosts(s,{euro,esc,calculateMonthlyCostComparison=calculateDefaultMonthlyCostComparison,costData}={}){
+ const {rows,total,known,provisional,prefix,monthLabel}=costData||housingPersonCostData(s,calculateMonthlyCostComparison);
+ return `<section class="housing-person-costs" aria-label="Gasto mensual por persona en esta vivienda"><h3>Qué pagaría cada uno${monthLabel?' · '+esc(monthLabel):''}</h3>
+ <div class="housing-person-costs-grid">${rows.map(row=>`<div class="housing-person-cost" data-person-cost="${row.id}"><span>${esc(row.label)}</span><strong>${known?amount(row.cost,euro,esc,{prefix}):'Por completar'} <small>/mes</small></strong></div>`).join('')}</div>
+ <div class="housing-person-costs-total"><span>Total familiar en ese mes</span><strong>${known?amount(total,euro,esc,{prefix}):'Por completar'} <small>/mes</small></strong></div>
+ <p class="housing-person-costs-note">Gastos comunes y personales, con el préstamo de mamá una sola vez. Reparto familiar; la deuda bancaria conserva sus titulares.${provisional?' '+(known?'Orientativo: hay importes o hipótesis por comprobar.':'Faltan datos para repartir el gasto.'):''}</p>
+ <button type="button" class="card-link" data-action="view-home-repartition" data-id="${esc(s?.id||'')}">Ver reparto →</button></section>`;
+}
+export function renderHousingList(rows,{calculateScenario,euro,esc,selected=new Set(),cloudConnected=false,comparisonHtml='',hasDraft=false,sort='favorites',getCommuteIndicators,calculateMonthlyCostComparison=calculateDefaultMonthlyCostComparison}={}){
  rows=Array.isArray(rows)?rows:[];
  const options={calculateScenario,getCommuteIndicators,sort},homes=rankHomes(rows,options),choices=selectionSet(selected);
  const selectedCount=rows.filter(row=>choices.has(row.id)).length;
@@ -50,12 +83,14 @@ export function renderHousingList(rows,{calculateScenario,euro,esc,selected=new 
  <p class="housing-ranking-note">Orden mensual e inicial: datos pendientes al final. Trayectos: media de los tres rangos de salida a las 08:00, con los tres completos.</p>
  <div class="housing-grid">${homes.map(home=>{
   const s=home.scenario,d=s.listingDetails||{},photos=Array.isArray(s.images)?s.images.map(safeImageUrl).filter(Boolean).slice(0,8):[];
+  const personCosts=housingPersonCostData(s,calculateMonthlyCostComparison);
   return `<article class="card housing-card" data-home-id="${esc(s.id)}">${photos.length?`<button type="button" class="housing-cover-button" data-action="open-gallery" data-id="${esc(s.id)}" data-photo-index="0" aria-label="Ver ${photos.length} ${photos.length===1?'foto':'fotos'} de ${esc(s.name||'Vivienda')}"><img class="housing-cover" src="${esc(photos[0])}" alt="${esc(s.name||'Vivienda')}" loading="lazy" referrerpolicy="no-referrer"><span class="housing-photo-count" aria-hidden="true">▧ ${photos.length}</span></button>`:'<div class="housing-cover housing-placeholder" aria-hidden="true">⌂</div>'}
   <div class="housing-card-body"><div class="housing-card-heading"><div><span class="mini-label">${s.propertyType==='flat'?'PISO':'CASA'}${d.city?' · '+esc(d.city):''}</span><h2>${esc(s.name||'Vivienda sin nombre')}</h2></div><button type="button" class="housing-favorite ${home.favorite?'is-favorite':''}" data-action="favorite" data-id="${esc(s.id)}" aria-pressed="${home.favorite}" aria-label="${home.favorite?'Quitar de':'Añadir a'} favoritas: ${esc(s.name||'Vivienda')}">${home.favorite?'♥':'♡'}</button></div>
   <div class="housing-price">${amount(home.metrics.price,euro,esc,{digits:0})}</div><p class="fine-print">${[d.surfaceM2?esc(d.surfaceM2)+' m²':'',d.beds?esc(d.beds)+' hab.':'',d.baths?esc(d.baths)+' baño(s)':''].filter(Boolean).join(' · ')}</p>
-  <div class="housing-quick-costs"><div><small>Coste familiar al comprar /mes</small><strong>${monthlyAmount(home,euro,esc)}</strong></div><div><small>Capital del préstamo de mamá</small><strong>${amount(home.metrics.motherPrincipal,euro,esc,{prefix:home.incomplete?'≥ ':''})}</strong></div></div>
+  <div class="housing-quick-costs"><div><small>Coste familiar al comprar${personCosts.known&&personCosts.monthLabel?' · '+esc(personCosts.monthLabel):''} /mes</small><strong>${personCosts.known?amount(personCosts.total,euro,esc,{prefix:personCosts.prefix}):monthlyAmount(home,euro,esc)}</strong></div><div><small>Capital del préstamo de mamá</small><strong>${amount(home.metrics.motherPrincipal,euro,esc,{prefix:home.incomplete?'≥ ':''})}</strong></div></div>
   <div class="housing-status ${home.debtStatus.code}" title="Hipoteca y deudas de los titulares entre sus ingresos ordinarios. Referencia de cálculo; no es una aprobación del banco.">${esc(ratioLabel(home)+home.debtStatus.label)}</div>
   <div class="housing-data-status">${!home.valid?'Revisa los datos del cálculo':home.incomplete?'Datos pendientes · mínimo conocido':home.estimated?'Importes orientativos':'Datos introducidos'}${home.metrics.fundingGap>0?' · falta dinero para comprar':''}</div>
+  ${renderHousingPersonCosts(s,{euro,esc,costData:personCosts})}
   <div class="housing-commute" aria-label="Trayectos de mañana"><span class="mini-label">SALIDA 08:00</span>${home.commute.map(trip=>`<div class="housing-trip ${trip.exceedsTarget===true?'over-target':''}"><span>${esc(trip.label)}</span><strong>${esc(travelLabel(trip))}</strong></div>`).join('')}</div>
   <div class="scenario-actions"><button class="button primary" data-action="load" data-id="${esc(s.id)}">Abrir vivienda</button><button class="button secondary" data-action="edit-home" data-id="${esc(s.id)}">Editar vivienda</button></div>
   <label class="compare-controls"><input type="checkbox" data-compare="${esc(s.id)}" ${choices.has(s.id)?'checked':''}>Seleccionar para comparar</label><details class="housing-more-options"><summary>Más opciones</summary><div class="inline-actions"><button class="button plain" data-action="duplicate" data-id="${esc(s.id)}">Duplicar</button><button class="button plain danger" data-action="delete" data-id="${esc(s.id)}">Quitar vivienda</button></div></details></div></article>`;

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeScenario,calculateScenario} from './finance.mjs';
-import {renderRentalComparison,renderPropertyGallery,renderHousingList,renderHousingComparison} from './housing-ui.mjs';
+import {calculateFamilyTimeline} from './family-plan.mjs';
+import {renderRentalComparison,renderPropertyGallery,renderHousingList,renderHousingComparison,renderHousingPersonCosts} from './housing-ui.mjs';
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const euro=n=>Number.isFinite(n)?n.toFixed(2):'Pendiente';
 test('rental comparison includes utilities and living costs on both sides and the mother loan once',()=>{
@@ -21,10 +22,79 @@ test('property photos are HTTPS only and do not disclose the referrer',()=>{
 test('the overview shows compact apartment cards with costs, family-loan capital and morning trips',()=>{
  const s=normalizeScenario({id:'piso',name:'Piso Navàs',propertyType:'flat',purchasePrice:175000,images:['https://example.com/image.jpg'],budget:{utilitiesMonthly:120}});
  const html=renderHousingList([s],{calculateScenario,euro,esc,selected:new Set(),cloudConnected:true,comparisonHtml:'',hasDraft:false});
- for(const text of ['PISO','175000.00','Añadir vivienda','Editar vivienda','Abrir vivienda','Coste familiar al comprar /mes','Capital del préstamo de mamá','SALIDA 08:00','Sant Joan','Elisava','Leonardo'])assert.ok(html.includes(text),text);
+ for(const text of ['PISO','175000.00','Añadir vivienda','Editar vivienda','Abrir vivienda','Coste familiar al comprar','Capital del préstamo de mamá','SALIDA 08:00','Sant Joan','Elisava','Leonardo'])assert.ok(html.includes(text),text);
  assert.equal((html.match(/class="housing-trip /g)||[]).length,3);
  assert.ok(html.includes('data-action="favorite"'));assert.ok(html.includes('aria-pressed="false"'));
  assert.ok(!html.includes('Alquiler + vida + deudas'));assert.ok(!html.includes('Solo hipoteca'));
+});
+
+test('each home card adds the planned month and four net personal costs, separately from its bank ratio',()=>{
+ const s=normalizeScenario({id:'costs',name:'Piso',purchasePrice:175000,familyPlan:{purchaseMonth:'2027-06'}});
+ const costs=[750.01,600.02,580.03,415.61],total=2345.67;
+ const calculateMonthlyCostComparison=()=>({valid:true,month:'2027-06',purchaseMonth:'2027-06',incomplete:false,purchaseTotal:total,
+  people:['buyer1','buyer2','mother','sister'].map((id,index)=>({id,label:['Tú <test>','Tu hermano','Tu madre','Tu hermana'][index],purchaseCost:costs[index]}))});
+ const html=renderHousingList([s],{calculateScenario,euro,esc,calculateMonthlyCostComparison});
+ assert.match(html,/Qué pagaría cada uno · junio de 2027/);
+ assert.equal((html.match(/data-person-cost=/g)||[]).length,4);
+ assert.ok(html.includes('Tú &lt;test&gt;'));assert.ok(!html.includes('Tú <test>'));
+ for(const cost of [...costs,total])assert.ok(html.includes(euro(cost)));
+ assert.match(html,/Total familiar en ese mes/);
+ assert.match(html,/data-action="view-home-repartition" data-id="costs"/);
+ assert.match(html,/préstamo de mamá una sola vez/);
+ assert.match(html,/la deuda bancaria conserva sus titulares/);
+ assert.ok(html.indexOf('housing-person-costs')>html.indexOf('housing-data-status'));
+});
+
+test('per-person card costs stay pending for missing records, invalid results or unreconciled transfers',()=>{
+ const options={euro:n=>{assert.ok(Number.isFinite(n));return euro(n);},esc};
+ const missing=renderHousingPersonCosts({id:'missing'},options);
+ assert.equal((missing.match(/Por completar/g)||[]).length,5);
+ assert.match(missing,/Faltan datos para repartir el gasto/);
+ const s=normalizeScenario({id:'pending',familyPlan:{purchaseMonth:'2027-06'}});
+ for(const comparison of [{valid:false},
+  {valid:true,purchaseTotal:2000,people:['buyer1','buyer2','mother','sister'].map(id=>({id,purchaseCost:1000}))},
+  {valid:true,purchaseTotal:NaN,people:[]}
+ ]){
+  const html=renderHousingPersonCosts(s,{...options,calculateMonthlyCostComparison:()=>comparison});
+  assert.equal((html.match(/Por completar/g)||[]).length,5);
+  assert.ok(!html.includes('NaN'));assert.ok(!html.includes('undefined'));
+ }
+});
+
+test('per-person orientation marks all known costs consistently and an errored helper keeps the overview usable',()=>{
+ const s=normalizeScenario({id:'estimated',familyPlan:{purchaseMonth:'2027-06'}});
+ const html=renderHousingPersonCosts(s,{euro,esc,calculateMonthlyCostComparison:()=>({valid:true,month:'2027-06',incomplete:true,purchaseTotal:1600,
+  people:['buyer1','buyer2','mother','sister'].map(id=>({id,purchaseCost:400}))})});
+ assert.equal((html.match(/≈ 400.00/g)||[]).length,4);assert.ok(html.includes('≈ 1600.00'));
+ assert.match(html,/Orientativo: hay importes o hipótesis por comprobar/);
+ assert.doesNotThrow(()=>renderHousingList([s],{calculateScenario,euro,esc,calculateMonthlyCostComparison:()=>{throw new Error('Missing inputs');}}));
+});
+
+test('default per-person card costs include the real ownership plan and subtract internal mother repayments once',()=>{
+ const s=normalizeScenario({id:'shared-plan',purchasePrice:175000,
+  tax:{buyers:[{share:.5,rate:.05,eligibilityConfirmed:true},{share:.5,rate:.05,eligibilityConfirmed:true}]},
+  icf:{enabled:true},familyLoan:{enabled:true,rate:6.99,years:8,maxAmount:21500},
+  motherTransfer:{mode:'family-loan',repaymentMode:'custom',familyRate:0,familyYears:8},
+  budget:{incomes:[{label:'Tú',monthly:2078,payments:12},{label:'Tu hermano',monthly:1430.06,payments:14}],
+   householdIncomes:[{id:'mother',monthly:1200,payments:14},{id:'sister',monthly:500,payments:12}],
+   existingDebtMonthly:262,foodMonthly:500,utilitiesMode:'aggregate',utilitiesMonthly:330,familyInsuranceMonthly:243,
+   communityMonthly:80,ibiAnnual:1000,wasteAnnual:240,maintenanceAnnual:600},
+  cash:{preClosingLoanPayments:2},familyPlan:{purchaseMonth:'2027-06',motherLoanStartMonth:'2027-04',
+   sharedCostMode:'workers',purchaseAllocation:'shared-household',transportOwner:'buyer1',
+   personalCommitments:[{id:'self-employed',label:'Autónoma',owner:'buyer1',kind:'expense',monthly:100}],
+   extraPayMonths:{buyer2:[6,12],mother:[6,12]}}});
+ const timeline=calculateFamilyTimeline(s,{startMonth:'2027-06',months:1});
+ assert.equal(timeline.valid,true);
+ const row=timeline.months[0],html=renderHousingPersonCosts(s,{euro,esc});
+ assert.match(html,/junio de 2027/);assert.ok(!html.includes('Por completar'));
+ for(const [id,person] of Object.entries(row.people)){
+  const netCost=person.expenses-person.internalReceived-person.livingContributionReceived-person.familySupportReceived;
+  const cell=html.match(new RegExp('data-person-cost="'+id+'">([\\s\\S]*?)<\\/div>'))?.[1]||'';
+  assert.ok(cell.includes(euro(Math.round(netCost*100)/100)),id);
+ }
+ assert.ok(html.includes(euro(row.household.expenses)));
+ assert.ok(row.household.internalTransfers>0,'fixture contains internal mother repayments');
+ assert.ok(row.household.salaryExtra>0,'purchase in an extra-pay month does not discount ordinary expenses');
 });
 
 function fixture(id,{monthly=1500,incomplete=false,favorite=false,valid=true,notes=''}={}){
