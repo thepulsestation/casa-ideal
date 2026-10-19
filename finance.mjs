@@ -1,5 +1,5 @@
-import {calculatePreclosing} from './preclosing.mjs?v=26';
-import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=26';
+import {calculatePreclosing} from './preclosing.mjs?v=27';
+import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=27';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are

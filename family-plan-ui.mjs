@@ -1,4 +1,4 @@
-import {renderPersonalCommitments} from './personal-commitments-ui.mjs?v=26';
+import {renderPersonalCommitments} from './personal-commitments-ui.mjs?v=27';
 
 const PERSON_IDS = ['buyer1', 'buyer2', 'mother', 'sister'];
 const PERSON_LABELS = {buyer1: 'Tú', buyer2: 'Tu hermano', mother: 'Tu madre', sister: 'Tu hermana'};
