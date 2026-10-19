@@ -9,6 +9,24 @@ import {
 } from './finance.mjs';
 
 const close = (actual, expected, tolerance = 0.005) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} ≠ ${expected}`);
+
+test('dated personal debts affect bank effort while personal expenses affect only disposable income',()=>{
+ const scenario=normalizeScenario({budget:{incomes:[{monthly:2000,payments:12},{monthly:1500,payments:12}],existingDebtMonthly:100},familyPlan:{personalDebtEndMonth:'2029-12',personalCommitments:[{id:'extra-loan',label:'Extra loan',owner:'buyer1',monthly:180,kind:'debt',settleWithReceipt:true,payoffEstimate:1700,payoffFeeRate:.01},{id:'work-cost',label:'Work cost',owner:'buyer1',monthly:90,kind:'expense'}],extraordinaryReceipt:{enabled:true,month:'2027-01',amount:2000,owner:'buyer1',confirmed:false}}});
+ const before=calculateScenario(scenario,{asOfMonth:'2026-12'}),after=calculateScenario(scenario,{asOfMonth:'2027-01'});
+ assert.equal(before.valid,true);assert.equal(after.valid,true);
+ assert.equal(before.budget.existingDebtMonthly,280);assert.equal(after.budget.existingDebtMonthly,100);
+ assert.equal(before.budget.personalExpenseMonthly,90);assert.equal(after.budget.personalExpenseMonthly,90);
+ close(before.budget.borrowerDebtMonthly-after.budget.borrowerDebtMonthly,180);
+ close(before.budget.currentComparable-after.budget.currentComparable,180);
+ assert.equal(before.budget.regularIncome,after.budget.regularIncome);
+ assert.equal(before.cash.savings,after.cash.savings,'one-off income never becomes purchase savings');
+ assert.equal(after.budget.personalDebtCancellationAssumed,true);assert.equal(after.budget.incomplete,true);
+ assert.equal(calculateScenario(scenario,{asOfMonth:'2030-01'}).budget.existingDebtMonthly,0);
+ const short=structuredClone(scenario);short.familyPlan.extraordinaryReceipt.amount=1500;
+ assert.equal(calculateScenario(short,{asOfMonth:'2027-01'}).budget.existingDebtMonthly,280,'unfunded cancellation keeps all installments');
+ const bad=structuredClone(scenario);bad.familyPlan.personalCommitments[0].monthly=-1;
+ assert.equal(calculateScenario(bad).valid,false);
+});
 const youngBuyers = [
   { label: 'A', share: 0.5, rate: 0.05, eligibilityConfirmed: true },
   { label: 'B', share: 0.5, rate: 0.05, eligibilityConfirmed: true },

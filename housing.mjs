@@ -1,5 +1,5 @@
-import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=22';
-import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=22';
+import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=23';
+import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=23';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);

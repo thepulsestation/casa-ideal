@@ -221,7 +221,7 @@ test('mother expenses are her own salary cost after the children repayment, whil
   assert.ok(html.includes('Gasto a cargo de su nómina · pagos menos devoluciones'));
 });
 
-test('each month disclosure expands the requested breakdown independently of the selected month and mode', () => {
+test('month disclosures render compact cost rows aligned with the main table without repeating its headers', () => {
   const {scenario, result} = fixture();
   result.months[0].people.buyer2.university = 315;
   result.months[2].people.buyer2.university = 0;
@@ -229,18 +229,41 @@ test('each month disclosure expands the requested breakdown independently of the
     const html = renderFamilyPlan(scenario, result, {...helpers, tableMode, selectedMonth: '2027-01', expandedMonths: new Set(['2026-12', '2027-07'])});
     assert.ok(calendarRow(html, '2026-12').includes('aria-expanded="true" aria-controls="family-plan-details-2026-12"'));
     assert.ok(calendarRow(html, '2027-01').includes('aria-expanded="false"'));
-    assert.ok(html.includes('<tr id="family-plan-details-2026-12" class="family-plan-month-detail"><td colspan="7"><div'));
-    assert.ok(html.includes('<tr id="family-plan-details-2027-01" class="family-plan-month-detail" hidden><td colspan="7"></td></tr>'));
-    const december = html.split('<tr id="family-plan-details-2026-12"')[1]?.split('<tr class="family-plan-current-month">')[0] || '';
-    assert.ok(december.includes('Desglose de diciembre de 2026 · Alquiler · antes de la compra'));
+    assert.ok(html.includes('<tbody id="family-plan-details-2027-01" class="family-plan-month-detail" hidden></tbody>'));
+    const december = html.split('<tbody id="family-plan-details-2026-12"')[1]?.split('</tbody>')[0] || '';
     assert.ok(december.includes('315.00 €'));
-    const july = html.split('<tr id="family-plan-details-2027-07"')[1] || '';
-    assert.ok(july.includes('Desglose de julio de 2027 · Vivienda comprada'));
+    assert.ok(december.includes('Ingresos ordinarios'));
+    assert.ok(december.includes('Disponible para ahorrar'));
+    assert.doesNotMatch(december, /<table|<caption|<thead|diciembre|Alquiler · antes|<th scope="col"/);
+    const rows = [...december.matchAll(/<tr[^>]*>(.*?)<\/tr>/g)].map(match => match[1]);
+    assert.ok(rows.length > 3);
+    for (const row of rows) {
+      assert.match(row, /^<th scope="row" colspan="2">/);
+      assert.equal((row.match(/<td class="number">/g) || []).length, 5, 'four people and household use the parent numeric columns');
+    }
+    const july = html.split('<tbody id="family-plan-details-2027-07"')[1]?.split('</tbody>')[0] || '';
     assert.ok(!july.includes('315.00 €'));
+    assert.doesNotMatch(july, /<table|<caption|julio|Vivienda comprada/);
+    const calendar = html.split('<table class="family-plan-monthly-table">')[1]?.split('</table>')[0] || '';
+    assert.equal((calendar.match(/<col class=/g) || []).length, 7);
+    assert.equal((calendar.match(/<th scope="col"/g) || []).length, 7, 'one shared header aligns every month and its costs');
   }
   const closed = renderFamilyPlan(scenario, result, helpers);
   assert.equal((closed.match(/class="family-plan-month-detail" hidden/g) || []).length, 3);
-  assert.equal((closed.match(/class="family-plan-breakdown"/g) || []).length, 1, 'closed months do not build unnecessary nested tables');
+  assert.equal((closed.match(/class="family-plan-breakdown"/g) || []).length, 1, 'the separate household detail retains its full table');
+  assert.doesNotMatch(closed, /family-plan-inline-cost/);
+});
+
+test('table-local expense and saving buttons mirror the selected presentation mode without financial fields', () => {
+  const {scenario, result} = fixture();
+  for (const tableMode of ['expenses', 'remaining']) {
+    const html = renderFamilyPlan(scenario, result, {...helpers, tableMode});
+    assert.match(html, /class="family-plan-view-switch" role="group" aria-label="Vista de la tabla"/);
+    assert.ok(html.includes('data-action="plan-table-mode" data-id="expenses" aria-pressed="' + (tableMode === 'expenses') + '">Gastos</button>'));
+    assert.ok(html.includes('data-action="plan-table-mode" data-id="remaining" aria-pressed="' + (tableMode === 'remaining') + '">Ahorro disponible</button>'));
+    const buttons = html.match(/<div class="family-plan-view-switch".*?<\/div>/)?.[0] || '';
+    assert.doesNotMatch(buttons, /data-field/);
+  }
 });
 
 test('expense mode keeps unknown incoming repayments incomplete and labels a negative net cost as a credit', () => {
@@ -253,4 +276,50 @@ test('expense mode keeps unknown incoming repayments incomplete and labels a neg
   assert.ok(calendarRow(html, '2027-07').includes('family-plan-credit">-50.00 €<small>Saldo a favor</small>'));
   const credit = renderFamilyPlan(scenario, result, {...helpers, selectedMonth: '2027-07'});
   assert.ok(credit.includes('SALDO A FAVOR · DEVOLUCIONES SUPERIORES A PAGOS'));
+});
+
+test('the monthly costs split personal commitments once and retain redistribution and one-time cash separately', () => {
+  const {scenario, result} = fixture();
+  const row = result.months[1];
+  for (const id of ids) Object.assign(row.people[id], {rent:0,food:50,utilities:30,commonOther:20,common:100,fixedPersonalDebt:0,personalCommitmentDebt:0,personalExpense:0,transportExpense:0,personalCommitments:[],university:0,mortgage:0,familyRepayment:0,motherBankPayment:0,internalReceived:0,householdRedistribution:0,icfRepayment:0,extraordinaryIncome:0,debtSettlement:0,reservedExtraordinary:0,cashRemaining:1000});
+  Object.assign(row.people.buyer1, {
+    fixedPersonalDebt:145, personalCommitmentDebt:45, personalExpense:12, transportExpense:9,
+    personalCommitments:[{id:'car',label:'Coche de prueba',kind:'debt',amount:45},{id:'fee',label:'Cuota personal de prueba',kind:'expense',amount:12}],
+    householdRedistribution:30,expenses:296,income:1000,remaining:704,
+    extraordinaryIncome:500,debtSettlement:150,reservedExtraordinary:25,cashRemaining:1029,
+  });
+  Object.assign(row.household,{extraordinaryIncome:500,debtSettlement:150,reservedExtraordinary:25,cashRemaining:4525});
+  const html=renderFamilyPlan(scenario,result,{...helpers,expandedMonths:new Set(['2027-01'])});
+  const detail=html.split('<tbody id="family-plan-details-2027-01"')[1]?.split('</tbody>')[0]||'';
+  const cost=(label)=>detail.match(new RegExp('<th scope="row" colspan="2">'+label+'</th><td class="number">([^<]+)</td>'))?.[1];
+  assert.equal(cost('Deuda personal base'),'100.00 €');
+  assert.equal(cost('Coche de prueba'),'45.00 €');
+  assert.equal(cost('Cuota personal de prueba'),'12.00 €');
+  assert.equal(cost('Transporte personal'),'9.00 €');
+  assert.equal(cost('Ajuste del reparto común'),'30.00 €');
+  assert.equal(cost('Cobro extraordinario · solo este mes'),'500.00 €');
+  assert.equal(cost('Cancelación de deudas · solo este mes'),'150.00 €');
+  assert.equal(cost('Reserva fiscal del cobro'),'25.00 €');
+  assert.equal(cost('Disponible para ahorrar'),'704.00 €');
+  assert.equal(cost('Disponible con el cobro y la cancelación'),'1029.00 €');
+  assert.doesNotMatch(detail,/145.00 €|Otros pagos personales/,'debt aggregate and expense aggregate are not counted again alongside their details');
+  const ordinary=renderFamilyPlan(scenario,result,{...helpers,expandedMonths:new Set(['2026-12'])}).split('<tbody id="family-plan-details-2026-12"')[1]?.split('</tbody>')[0]||'';
+  assert.doesNotMatch(ordinary,/Cobro extraordinario · solo este mes|Cancelación de deudas · solo este mes|Reserva fiscal del cobro/);
+});
+
+test('the current pool and future household contribution are editable without changing debt ownership', () => {
+  const {scenario,result}=fixture();
+  Object.assign(result.plan,{purchaseAllocation:'shared-household',transportOwner:'buyer1'});
+  result.plan.currentAllocation={enabled:true,otherCostMode:'living-pool',includeUniversity:true,brotherLivingShare:.5};
+  result.months[1].purchaseAllocationApplied=true;
+  const html=renderFamilyPlan(scenario,result,{...helpers,selectedMonth:'2027-01'});
+  assert.match(html,/data-field="familyPlan.currentAllocation.includeUniversity" checked/);
+  assert.match(html,/value="living-pool" selected/);
+  assert.match(html,/data-field="familyPlan.purchaseAllocation"/);
+  assert.match(html,/value="shared-household" selected/);
+  assert.match(html,/La titularidad y las obligaciones con el banco no cambian/);
+  assert.match(html,/data-nullable="true" data-field="familyPlan.transportOwner"/);
+  assert.match(html,/Las deudas, autónomos y transporte personal conservan su titular/);
+  assert.doesNotMatch(html,/La universidad es gasto de tu hermano/);
+  assert.match(html,/Mis pagos personales y la cancelación prevista/);
 });

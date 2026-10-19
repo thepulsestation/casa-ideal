@@ -43,6 +43,17 @@ test('the operational mother-loan cap and advance deposit constrain the maximum 
   assert.ok(r.pendingAssumptions.some(text => text.includes('arras')));
 });
 
+test('a future capacity hypothesis uses its explicit month without treating a future receipt as current money',()=>{
+ const scenario=base();scenario.familyLoan.maxAmount=60000;
+ scenario.familyPlan={personalCommitments:[{id:'temporary',label:'Temporary credit',owner:'buyer1',monthly:350,kind:'debt',settleWithReceipt:true,payoffEstimate:2000}],extraordinaryReceipt:{enabled:true,month:'2027-01',amount:2200,owner:'buyer1'}};
+ const before=calculatePurchaseCapacity(scenario,{asOfMonth:'2026-12'}),after=calculatePurchaseCapacity(scenario,{asOfMonth:'2027-03'});
+ assert.equal(before.valid,true);assert.equal(after.valid,true);
+ assert.equal(before.existingDebtMonthly,600);assert.equal(after.existingDebtMonthly,250);
+ assert.ok(after.maxPrice>before.maxPrice);
+ assert.equal(after.summary.savings,0);
+ assert.ok(after.pendingAssumptions.some(text=>text.includes('cancelaciones de deudas')));
+});
+
 test('the bank uses ordinary borrower incomes and counts the personal and internal family debts once', () => {
   const s = base();
   s.budget.incomes = [{monthly: 1700, payments: 14}, {monthly: 1300, payments: 14}];

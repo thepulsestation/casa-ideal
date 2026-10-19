@@ -1,4 +1,4 @@
-import {renderPropertyCosts} from './property-costs.mjs?v=22';
+import {renderPropertyCosts} from './property-costs.mjs?v=23';
 /** Family income and household expenses. Personal amounts live in the scenario. */
 export function renderBudget(s, result, { field, select, check, section, notice, row, euro, pct, resultSidebar, global = false }) {
   const b = result.budget;
@@ -55,9 +55,10 @@ export function renderBudget(s, result, { field, select, check, section, notice,
     `)}
     ${section('Lo que ya debéis', 'Cuotas de préstamos actuales, tarjetas y otras financiaciones.', `
       <div class="form-grid">
-        ${field('Tu deuda personal mensual', 'budget.existingDebtMonthly', { hint: 'Se atribuye a ti en el reparto. El banco suma las deudas de ambos titulares; sin incluir la nueva hipoteca.' })}
+        ${field('Préstamo personal principal · cuota mensual', 'budget.existingDebtMonthly', { hint: 'Solo la cuota principal ya registrada. Coche, tarjetas y otras cuotas se desglosan en Reparto; no vuelvas a sumarlas aquí.' })}
         ${field('Otras deudas mensuales de mamá', 'budget.familyExistingDebtMonthly', { hint: 'Sin repetir el nuevo préstamo de compra.' })}
       </div>
+      <div class="breakdown">${row('Deudas actuales de los titulares · mes del cálculo',euro(b.existingDebtMonthly,2))}${row('Otros pagos personales · sin préstamo',euro(b.personalExpenseMonthly??0,2))}</div><button class="card-link" data-view="reparto">Editar pagos personales y cancelación prevista →</button>
       ${!global?notice(`Esfuerzo de los titulares: <strong>${pct(b.debtRatio)}</strong>. Deudas frente a ingresos del hogar: <strong>${pct(b.familyDebtRatio)}</strong>. Son dos perspectivas distintas. La aprobación del banco depende de su análisis, incluida la financiación de la entrada.`, 'info'):''}
     `)}
     ${section('Agua, electricidad/gas e internet', 'Un solo presupuesto para las cuatro personas. Por defecto se usa igual al alquilar y al comprar.', utilities())}
@@ -68,7 +69,7 @@ export function renderBudget(s, result, { field, select, check, section, notice,
         ${field('Trastero al mes','budget.storageMonthly',{hint:'Se mantiene igual en los dos presupuestos. No lo repitas en alquiler ni en otros gastos.'})}
         ${field('Otros gastos de vida al mes','budget.otherMonthly',{hint:'Salud, ocio, suscripciones… Sin repetir el trastero ni la universidad del reparto mensual.'})}
       </div>
-      <div class="breakdown">${row('Universidad · gasto de tu hermano este mes',euro(b.universityMonthly??0,2))}</div><p class="fine-print">Se incluye una vez en el coste del hogar, hasta el último mes indicado. No se clasifica como préstamo. <button class="card-link" data-view="reparto">Editar importe, fechas y reparto →</button></p>
+      <div class="breakdown">${row('Universidad · gasto educativo este mes',euro(b.universityMonthly??0,2))}</div><p class="fine-print">Se incluye una vez en el coste del hogar, hasta el último mes indicado. No se clasifica como préstamo. <button class="card-link" data-view="reparto">Editar importe, fechas y reparto →</button></p>
     `)}
     ${!global?section('Los gastos propios de la casa que compraríais','IBI, residuos y comunidad o conservación. Usa recibos cuando los tengas; mientras tanto puedes probar una provisión.',renderPropertyCosts(s,result,{field,check,notice,row,euro})):notice('Este presupuesto se aplica a todas las viviendas. El IBI, la comunidad, los seguros y los préstamos de compra se ajustan dentro de cada vivienda.','info')}
     ${section(global?'Vuestro alquiler actual':'Alquilar o comprar, con el mismo presupuesto','No tienes que volver a rellenar agua, luz, internet, comida, transporte ni trastero.',`

@@ -103,3 +103,20 @@
 
 .family-plan-row-toggle{display:block;margin-top:7px;padding:5px 9px;border:1px solid #cbdccb;border-radius:6px;background:#f0f6ec;color:var(--green);font-size:11px;white-space:nowrap}.family-plan-row-toggle[aria-expanded=true]{background:var(--green);color:#fff;border-color:var(--green)}.family-plan-month-detail>td{padding:18px;background:#f3f7ef;border-left:3px solid #99b69c;white-space:normal}.family-plan-month-detail h3{font-size:15px;margin:0 0 12px}.family-plan-month-detail .family-plan-breakdown{background:#fff}.family-plan-month-detail .family-plan-breakdown th,.family-plan-month-detail .family-plan-breakdown td{font-size:11px}.family-plan-credit{color:var(--green);font-weight:650}.family-plan-monthly-table td small{display:block;font-size:9px;white-space:normal}#family-plan-table-mode{max-width:390px}.family-plan-calendar>.table-wrap{scrollbar-gutter:stable}@media(max-width:650px){.family-plan-month-detail>td{padding:10px}.family-plan-row-toggle{font-size:10px}#family-plan-table-mode{max-width:100%}}
 .family-plan-breakdown tbody th{white-space:normal;font-size:11px}@media(max-width:650px){.family-plan-breakdown{width:660px;table-layout:fixed}.family-plan-breakdown th:first-child{width:180px;min-width:180px;white-space:normal}.family-plan-breakdown td,.family-plan-breakdown th{padding:12px 10px}.family-plan-breakdown caption{max-width:300px}}
+
+/* Month details share the calendar columns: compact inline costs, no second table. */
+.family-plan-view-switch{display:inline-flex;gap:3px;padding:3px;border:1px solid #d7e2d2;border-radius:9px;background:#f1f5ed;margin:15px 0 0}
+.family-plan-view-switch button{border:0;border-radius:6px;background:transparent;color:var(--green);padding:7px 14px;font-size:11px;font-weight:600}
+.family-plan-view-switch button[aria-pressed=true]{background:var(--green);color:#fff;box-shadow:0 1px 3px #163e2720}
+.family-plan-monthly-table{table-layout:fixed;min-width:760px}
+.family-plan-monthly-table .family-plan-month-column{width:18%}.family-plan-monthly-table .family-plan-phase-column{width:22%}.family-plan-monthly-table .family-plan-number-column{width:12%}
+.family-plan-monthly-table th,.family-plan-monthly-table td{min-width:0;padding:8px 10px}.family-plan-monthly-table th:first-child{min-width:0}.family-plan-monthly-table .number{text-align:right;font-variant-numeric:tabular-nums}
+.family-plan-monthly-table .family-plan-month-summary th,.family-plan-monthly-table .family-plan-month-summary td{border-bottom:1px solid #dce5d6;vertical-align:middle}
+.family-plan-monthly-table .family-plan-row-toggle{margin-top:3px;padding:2px 6px;font-size:10px;line-height:1.4}
+.family-plan-monthly-table .family-plan-month-detail th,.family-plan-monthly-table .family-plan-month-detail td{padding:4px 10px;background:#f5f8f1;border-bottom:1px solid #e8ede3;font-size:10px;line-height:1.45}
+.family-plan-monthly-table .family-plan-month-detail th{padding-left:19px;white-space:normal;color:#64745f;font-weight:400;border-left:2px solid #9db895}
+.family-plan-monthly-table .family-plan-month-detail tr:first-child th,.family-plan-monthly-table .family-plan-month-detail tr:first-child td{padding-top:7px}
+.family-plan-monthly-table .family-plan-month-detail tr:last-child th,.family-plan-monthly-table .family-plan-month-detail tr:last-child td{padding-bottom:7px;border-bottom:2px solid #d8e3ce}
+.family-plan-monthly-table .family-plan-month-detail .family-plan-inline-expenses th,.family-plan-monthly-table .family-plan-month-detail .family-plan-inline-expenses td{font-weight:650;border-top:1px solid #ceddc4;color:var(--ink)}
+.family-plan-monthly-table .family-plan-month-detail .family-plan-inline-remaining th,.family-plan-monthly-table .family-plan-month-detail .family-plan-inline-remaining td{color:var(--green);font-weight:650;background:#edf4e6}
+@media(max-width:650px){.family-plan-monthly-table{min-width:700px}.family-plan-monthly-table th,.family-plan-monthly-table td{padding-left:8px;padding-right:8px}.family-plan-view-switch button{padding:7px 12px}}

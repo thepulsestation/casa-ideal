@@ -337,3 +337,120 @@ test('worker allocation with no incomes stays pending instead of assigning a fre
   assert.equal(december.people.buyer1.remaining, null);
   assert.ok(timeline.warnings.some(warning => warning.includes('Sin ninguna persona con ingresos')));
 });
+
+test('current university and living pool share the cost between mother and brother without charging the rent payer', () => {
+  const source = fixture(); source.budget.storageMonthly = 40;
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true};
+  const october = calculateFamilyTimeline(source).months[0];
+  assert.equal(october.people.buyer1.common, 1000);
+  assert.equal(october.people.buyer1.university, 0);
+  for (const role of ['buyer2', 'mother']) {
+    assert.equal(october.people[role].common, 320);
+    assert.equal(october.people[role].university, 225);
+  }
+  assert.equal(october.household.unassignedExpenses, 0);
+  close(Object.values(october.people).reduce((sum, person) => sum + person.remaining, 0), october.household.remaining, .001);
+});
+
+test('shared ownership costs equalize the common burden while preserving legal borrower debt and personal costs', () => {
+  const source = fixture(); source.familyPlan.sharedCostMode = 'workers';
+  source.familyPlan.purchaseAllocation = 'shared-household';
+  source.familyPlan.personalCommitments = [{id: 'profession', label: 'Cuota profesional', owner: 'buyer1', monthly: 80, kind: 'expense'}];
+  const timeline = calculateFamilyTimeline(source), december = timeline.months[2], january = timeline.months[3];
+  for (const row of [december, january]) {
+    const workerCount = row.people.sister.income > 0 ? 4 : 3;
+    const pooled = row.household.common + row.household.university + row.household.mortgage + row.household.motherBankPayment + row.household.icfRepayment;
+    for (const role of ['buyer1', 'buyer2', 'mother', ...(workerCount === 4 ? ['sister'] : [])]) {
+      const person = row.people[role];
+      close(person.expenses - person.internalReceived - person.fixedPersonalDebt - person.personalExpense, pooled / workerCount, .011);
+    }
+    close(Object.values(row.people).reduce((sum, person) => sum + person.householdRedistribution, 0), 0, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.expenses - person.internalReceived, 0), row.household.expenses, .001);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.remaining, 0), row.household.remaining, .001);
+  }
+  assert.equal(december.people.sister.expenses, 0);
+  const original = structuredClone(source); original.familyPlan.purchaseAllocation = 'owners';
+  const legal = calculateFamilyTimeline(original).months[2];
+  assert.equal(december.bankDebtMonthly, legal.bankDebtMonthly);
+  assert.equal(december.people.buyer1.mortgage, legal.people.buyer1.mortgage);
+  assert.equal(december.people.buyer1.familyRepayment, legal.people.buyer1.familyRepayment);
+  assert.equal(december.people.mother.motherBankPayment, legal.people.mother.motherBankPayment);
+  assert.equal(december.people.buyer1.personalExpense, 80);
+});
+
+test('personal transport is removed from common costs and charged once to its owner', () => {
+  const source = fixture(); source.budget.carMonthly = 90.03; source.familyPlan.transportOwner = 'buyer1';
+  const personal = calculateFamilyTimeline(source), shared = structuredClone(source); shared.familyPlan.transportOwner = null;
+  const baseline = calculateFamilyTimeline(shared);
+  for (let index = 0; index < personal.months.length; index++) {
+    const row = personal.months[index], prior = baseline.months[index];
+    assert.equal(row.people.buyer1.transportExpense, 90.03);
+    assert.equal(row.people.buyer2.transportExpense, 0);
+    close(row.household.common, prior.household.common - 90.03, .001);
+    assert.equal(row.household.expenses, prior.household.expenses);
+    assert.equal(row.bankDebtMonthly, prior.bankDebtMonthly);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.remaining, 0), row.household.remaining, .001);
+  }
+});
+
+test('personal debt settlement changes monthly bank debt but extraordinary receipt remains separate from recurring salary and savings', () => {
+  const source = fixture();
+  source.familyPlan.personalCommitments = [
+    {id: 'vehicle', label: 'Vehículo', owner: 'buyer1', monthly: 125, kind: 'debt', settleWithReceipt: true, payoffEstimate: 2100, payoffFeeRate: .01},
+    {id: 'profession', label: 'Cuota profesional', owner: 'buyer1', monthly: 80, kind: 'expense'},
+  ];
+  source.familyPlan.extraordinaryReceipt = {enabled: true, month: '2027-01', amount: 3500, taxReserve: 200, owner: 'buyer1', confirmed: false};
+  const timeline = calculateFamilyTimeline(source), december = timeline.months[2], january = timeline.months[3], february = timeline.months[4];
+  assert.equal(december.people.buyer1.fixedPersonalDebt, 325);
+  assert.equal(january.people.buyer1.fixedPersonalDebt, 200);
+  assert.equal(january.people.buyer1.personalCommitmentDebt, 0);
+  assert.equal(january.people.buyer1.personalExpense, 80);
+  assert.equal(january.people.buyer1.income, 2300);
+  assert.equal(january.people.buyer1.extraordinaryIncome, 3500);
+  assert.equal(january.people.buyer1.debtSettlement, 2121);
+  assert.equal(january.people.buyer1.reservedExtraordinary, 200);
+  close(january.people.buyer1.cashRemaining - january.people.buyer1.remaining, 1179, .001);
+  close(january.household.cashRemaining - january.household.remaining, 1179, .001);
+  assert.equal(february.people.buyer1.extraordinaryIncome, 0);
+  assert.equal(february.people.buyer1.cashRemaining, february.people.buyer1.remaining);
+  close(january.bankDebtMonthly, december.bankDebtMonthly - 125, .001);
+  assert.ok(timeline.warnings.some(warning => warning.includes('todavía no está confirmado')));
+  assert.equal(timeline.incomplete, true);
+});
+
+test('unfunded cancellation hypothesis retains debt installments and warns instead of declaring new borrowing capacity', () => {
+  const source = fixture();
+  source.familyPlan.personalCommitments = [{id: 'vehicle', label: 'Vehículo', owner: 'buyer1', monthly: 125, kind: 'debt', settleWithReceipt: true, payoffEstimate: 2100}];
+  source.familyPlan.extraordinaryReceipt = {enabled: true, month: '2027-01', amount: 2000, owner: 'buyer1', confirmed: false};
+  const timeline = calculateFamilyTimeline(source), january = timeline.months[3];
+  assert.equal(january.people.buyer1.fixedPersonalDebt, 325);
+  assert.equal(january.people.buyer1.debtSettlement, 0);
+  assert.equal(timeline.extraordinarySettlement.fundingGap, 100);
+  assert.ok(timeline.warnings.some(warning => warning.includes('no cubre todas las cancelaciones')));
+});
+
+test('public transport remains personal outside the household pool and a nonworking sister is not silently subsidized', () => {
+  const source = fixture(); source.familyPlan.sisterJob.enabled = false;
+  source.familyPlan.sharedCostMode = 'workers'; source.familyPlan.purchaseAllocation = 'shared-household';
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', brotherLivingShare: .5, otherCostMode: 'living-pool', includeUniversity: true};
+  source.familyPlan.publicTransport = {buyer2Monthly: 15.25, motherMonthly: 55, sisterMonthly: 19.33, sisterBeforePurchaseMotherShare: .5};
+  const timeline = calculateFamilyTimeline(source), current = timeline.months[0], owned = timeline.months[2];
+  assert.equal(current.people.buyer2.publicTransportExpense, 15.25);
+  assert.equal(current.people.mother.publicTransportExpense, 64.67);
+  assert.equal(current.people.sister.publicTransportExpense, 9.66);
+  assert.equal(current.people.sister.remaining, -9.66);
+  assert.equal(current.needsFamilyTopUp, true);
+  assert.equal(owned.people.mother.publicTransportExpense, 55);
+  assert.equal(owned.people.sister.publicTransportExpense, 19.33);
+  assert.equal(owned.people.sister.remaining, -19.33);
+  const withoutTickets = structuredClone(source); delete withoutTickets.familyPlan.publicTransport;
+  const baseline = calculateFamilyTimeline(withoutTickets);
+  for (let index = 0; index < timeline.months.length; index++) {
+    const row = timeline.months[index], prior = baseline.months[index];
+    assert.equal(row.household.publicTransportExpense, 89.58);
+    close(row.household.expenses - prior.household.expenses, 89.58, .001);
+    assert.equal(row.household.common, prior.household.common);
+    assert.equal(row.bankDebtMonthly, prior.bankDebtMonthly);
+    close(Object.values(row.people).reduce((sum, person) => sum + person.remaining, 0), row.household.remaining, .001);
+  }
+});

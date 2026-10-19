@@ -1,4 +1,4 @@
-import {calculateScenario, normalizeScenario} from './finance.mjs?v=22';
+import {calculateScenario, normalizeScenario} from './finance.mjs?v=23';
 
 const unique = values => [...new Set(values.filter(Boolean))];
 const moneyTolerance = 0.005;
@@ -44,7 +44,7 @@ export function calculatePurchaseCapacity(input = {}, options = {}) {
   const cache = new Map();
   const evaluate = index => {
     if (!cache.has(index)) cache.set(index,
-      calculateScenario({...template, purchasePrice: index * step}));
+      calculateScenario({...template, purchasePrice: index * step}, options.asOfMonth === undefined ? {} : {asOfMonth: options.asOfMonth}));
     return cache.get(index);
   };
   const first = evaluate(1);
@@ -126,6 +126,7 @@ export function calculatePurchaseCapacity(input = {}, options = {}) {
     ...(template.purchaseCosts.brokerQuotePending ? ['Honorarios de agencia sin presupuesto final'] : []),
   ]);
   const pendingAssumptions = unique([
+    ...(reference.budget.personalDebtCancellationAssumed ? ['El cobro extraordinario y las cancelaciones de deudas están pendientes. Antes de ese mes se mantienen las cuotas; el resultado posterior es una hipótesis condicionada al cobro y a los saldos reales.'] : []),
     'Tasación igual o superior al precio y valor fiscal sin incremento sobre ese precio; hay que comprobar cada vivienda.',
     'Se conservan los costes del escenario usado como referencia; otras viviendas pueden exigir más gastos o reformas.',
     'El resultado comprueba deuda de titulares y capital inicial; el reparto familiar, el gasto de vida y la espera hasta la firma se revisan aparte.',

@@ -1,4 +1,4 @@
-import {monthlyPayment, compareFamilyLoanTerms} from './finance.mjs?v=22';
+import {monthlyPayment, compareFamilyLoanTerms} from './finance.mjs?v=23';
 
 // Apply the financing plan requested by the family once to legacy scenarios.
 // Eligibility remains unconfirmed; later edits (including disabling ICF) win.

@@ -654,8 +654,27 @@ test('expense and remaining views retain expanded months without writing financi
  const selector=app.node('family-plan-table-mode');selector.value='remaining';await selector.handlers.change({target:selector});
  assert.equal(memory.getItem('casa-ideal.family-plan-table-mode'),'remaining');
  assert.match(app.html,/<option value="remaining" selected>/);assert.ok(app.html.includes('aria-expanded="true"'));
+ await app.node('action-plan-table-modeexpenses').handlers.click();
+ assert.equal(memory.getItem('casa-ideal.family-plan-table-mode'),'expenses');
+ assert.match(app.html,/<option value="expenses" selected>/);assert.ok(app.html.includes('aria-expanded="true"'));
  await app.node('action-toggle-plan-month'+month).handlers.click();
  assert.match(app.html,new RegExp('id="family-plan-details-'+month+'" class="family-plan-month-detail" hidden'));
  assert.equal(app.requests.filter(request=>request.method==='PATCH').length,0);
  assert.deepEqual(app.server.get(profile.id).data,profile);
+});
+
+test('adding, editing and removing a personal payment updates the shared budget without replacing its allocation',async()=>{
+ const home=savedHome('personal-payment-editor');
+ home.familyPlan={currentAllocation:{enabled:true,rentPayer:'buyer1',brotherLivingShare:.5,otherCostMode:'living-pool',includeUniversity:true},sharedCostMode:'workers',purchaseAllocation:'shared-household'};
+ const profile={...extractFamilyProfile(home),createdAt:home.createdAt,updatedAt:home.updatedAt};
+ const app=boot({hash:buildFamilyHash('reparto',CODE,home.id),scenarios:[home,profile]});await app.loading;
+ await app.node('action-add-personal-commitment').handlers.click();
+ assert.equal(app.draft().familyPlan.personalCommitments.length,1);
+ const item=app.draft().familyPlan.personalCommitments[0];
+ const amount=app.node('field-familyPlan.personalCommitments.0.monthly');amount.value='90';await amount.handlers.change({target:amount});await app.flushTimers();
+ const saved=app.server.get(profile.id).data.familyPlan;
+ assert.equal(saved.personalCommitments[0].monthly,90);
+ assert.equal(saved.purchaseAllocation,'shared-household');assert.equal(saved.currentAllocation.includeUniversity,true);
+ await app.node('action-remove-personal-commitment'+item.id).handlers.click();await app.flushTimers();
+ assert.equal(app.server.get(profile.id).data.familyPlan.personalCommitments.length,0);
 });

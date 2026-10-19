@@ -1,4 +1,5 @@
-import {calculatePreclosing} from './preclosing.mjs?v=22';
+import {calculatePreclosing} from './preclosing.mjs?v=23';
+import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=23';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -532,6 +533,9 @@ export function validateScenario(input = {}) {
       }
     }
   }
+  const personalPlan = normalizePersonalCommitments(s.familyPlan ?? {});
+  errors.push(...personalPlan.errors);
+  if (s.familyPlan?.personalDebtEndMonth != null && !isMonth(s.familyPlan.personalDebtEndMonth)) errors.push('El final de la deuda personal necesita un mes válido con formato AAAA-MM.');
   numeric(s.budget.debtRatioLimit, 'Límite endeudamiento', 0.01, 1);
   if (!Array.isArray(s.budget.incomes)) errors.push('Los ingresos deben ser una lista.');
   if (s.budget.incomes.length > 2) errors.push('Solo hay dos titulares hipotecarios. Añade los ingresos de madre y hermana en sus perfiles de convivientes.');
@@ -792,18 +796,28 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
     && isMonth(university.endMonth) && asOfMonth <= university.endMonth ? nonnegative(university.amount) : 0;
   const householdMonthly = nonnegative(s.budget.carMonthly) + nonnegative(s.budget.foodMonthly) + nonnegative(s.budget.otherMonthly) + storageMonthly + universityMonthly;
   const knownFamilyPayment = nonnegative(familyLoan.monthlyPayment);
-  const existingDebt = nonnegative(s.budget.existingDebtMonthly);
-  const familyExistingDebt = nonnegative(s.budget.familyExistingDebtMonthly);
+  const personalCommitments = calculatePersonalCommitments(s.familyPlan ?? {}, {asOfMonth});
+  const baseExistingDebtMonthly = s.familyPlan?.personalDebtEndMonth == null || asOfMonth <= s.familyPlan.personalDebtEndMonth ? nonnegative(s.budget.existingDebtMonthly) : 0;
+  const baseFamilyExistingDebtMonthly = nonnegative(s.budget.familyExistingDebtMonthly);
+  const additionalBorrowerDebtMonthly = sum(['buyer1','buyer2'].map(id => personalCommitments.debtByOwner[id]));
+  const additionalNonBorrowerDebtMonthly = sum(['mother','sister'].map(id => personalCommitments.debtByOwner[id]));
+  const personalCommitmentDebtMonthly = additionalBorrowerDebtMonthly + additionalNonBorrowerDebtMonthly;
+  const personalCommitmentExpenseMonthly = sum(Object.values(personalCommitments.expenseByOwner));
+  const publicTransportExpenseMonthly = calculatePublicTransport(s.familyPlan ?? {},{owning:true}).total;
+  const personalExpenseMonthly = personalCommitmentExpenseMonthly + publicTransportExpenseMonthly;
+  const existingDebt = baseExistingDebtMonthly + additionalBorrowerDebtMonthly;
+  const familyExistingDebt = baseFamilyExistingDebtMonthly + additionalNonBorrowerDebtMonthly;
   const mortgageOnly = mortgage.monthlyPayment;
   const homeMonthly = mortgageOnly + propertyOverheadMonthly + utilitiesMonthly;
   const internalRepayment = nonnegative(motherTransfer.familyMonthlyRepayment);
   const borrowerDebtMonthly = mortgageOnly + existingDebt + internalRepayment;
   const totalDebtMonthly = mortgageOnly + existingDebt + knownFamilyPayment + familyExistingDebt;
-  const totalMonthly = homeMonthly + knownFamilyPayment + existingDebt + familyExistingDebt + householdMonthly;
+  const totalMonthly = homeMonthly + knownFamilyPayment + existingDebt + familyExistingDebt + householdMonthly + personalExpenseMonthly;
   const debtRatio = regularIncome > 0 ? borrowerDebtMonthly / regularIncome : null;
   const familyDebtRatio = actualRegularIncome > 0 ? totalDebtMonthly / actualRegularIncome : null;
   const currentRent = nonnegative(s.budget.currentRent);
-  const currentComparable = currentRent + currentUtilitiesMonthly + existingDebt + familyExistingDebt + householdMonthly + nonnegative(s.budget.currentOtherMonthly);
+  const currentComparable = currentRent + currentUtilitiesMonthly + existingDebt + familyExistingDebt + householdMonthly + personalExpenseMonthly + nonnegative(s.budget.currentOtherMonthly);
+  if (personalCommitments.extraordinarySettlement.planned) warnings.push('La cancelación de deudas depende del cobro extraordinario previsto y de los saldos reales. No aumenta la nómina ni los ahorros disponibles para la compra.');
   const missingEstimates = [
     ...(purchaseFeesEstimated ? ['Provisión de gastos de compra sin presupuestos individuales'] : []),
     ...(s.purchaseCosts.brokerQuotePending ? ['Honorarios de agencia sin presupuesto final'] : []),
@@ -816,7 +830,8 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
   ];
   if (missingEstimates.length) warnings.push(`Hay partidas pendientes de completar o comprobar: ${missingEstimates.join(', ')}.`);
   if(s.budget.propertyCostsEstimated)warnings.push('Se incluyen importes orientativos de IBI, residuos o comunidad: son una provisión de presupuesto, no un máximo. Sustitúyelos por los recibos y comprueba también posibles derramas.');
-  const incomplete = !familyTermsKnown || !motherTransfer.termsKnown || motherTransfer.costsIncomplete || unquotedProducts.length > 0 || homeQuoteMissing || actualRegularIncome === 0 || missingEstimates.length > 0;
+  const personalDebtCancellationAssumed = personalCommitments.extraordinarySettlement.planned && (!personalCommitments.extraordinarySettlement.confirmed || !personalCommitments.extraordinarySettlement.canSettle);
+  const incomplete = !familyTermsKnown || !motherTransfer.termsKnown || motherTransfer.costsIncomplete || unquotedProducts.length > 0 || homeQuoteMissing || actualRegularIncome === 0 || missingEstimates.length > 0 || personalDebtCancellationAssumed;
   const budget = {
     asOfMonth, universityMonthly,
     regularIncome, averagedIncome, familyIncomeMonthly: familyIncome,
@@ -836,6 +851,8 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
     utilitiesAggregateMonthly: utilitiesUnitemizedMonthly, currentUtilitiesAggregateMonthly: currentUtilitiesUnitemizedMonthly,
     utilitiesDetailedMonthly, currentUtilitiesDetailedMonthly,
     existingDebtMonthly: existingDebt, familyExistingDebtMonthly: familyExistingDebt,
+    baseExistingDebtMonthly, baseFamilyExistingDebtMonthly, additionalBorrowerDebtMonthly, additionalNonBorrowerDebtMonthly,
+    personalCommitmentDebtMonthly, personalExpenseMonthly, personalCommitmentExpenseMonthly, publicTransportExpenseMonthly, personalCommitments, personalDebtCancellationAssumed,
     familyLoanMonthly: familyLoan.monthlyPayment, totalDebtMonthly, totalMonthly,
     assumedLoanTerms,
     borrowerFamilyRepaymentMonthly: motherTransfer.familyMonthlyRepayment, borrowerDebtMonthly,
