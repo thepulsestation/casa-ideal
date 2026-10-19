@@ -12,7 +12,7 @@ function render(input={}){
 }
 test('the default family budget asks for bills and storage only once without a second current-bills form',()=>{
  const {paths,html}=render();
- for(const path of ['budget.utilityBreakdown.waterMonthly','budget.utilityBreakdown.energyMonthly','budget.utilityBreakdown.internetMonthly','budget.storageMonthly','budget.foodMonthly','budget.carMonthly'])assert.equal(paths.filter(p=>p===path).length,1,path);
+ for(const path of ['budget.utilityBreakdown.waterMonthly','budget.utilityBreakdown.energyMonthly','budget.utilityBreakdown.internetMonthly','budget.storageMonthly','budget.foodMonthly','budget.carMonthly','budget.familyInsuranceMonthly'])assert.equal(paths.filter(p=>p===path).length,1,path);
  assert.ok(!paths.some(p=>p.startsWith('budget.currentUtilityBreakdown')));
  assert.ok(!paths.includes('budget.currentUtilitiesMonthly'));
  assert.ok(html.includes('No tienes que volver a rellenar'));

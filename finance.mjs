@@ -1,6 +1,6 @@
-import {calculatePreclosing} from './preclosing.mjs?v=31';
-import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=31';
-import {normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=31';
+import {calculatePreclosing} from './preclosing.mjs?v=32';
+import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=32';
+import {normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=32';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -69,7 +69,7 @@ export const DEFAULT_SCENARIO = Object.freeze({
       { id: 'sister', monthly: 0, payments: 12 },
     ],
     existingDebtMonthly: 0, familyIncomeMonthly: 0, familyExistingDebtMonthly: 0,
-    utilitiesMonthly: 0, carMonthly: 0, foodMonthly: 0, otherMonthly: 0, storageMonthly: 0,
+    utilitiesMonthly: 0, carMonthly: 0, foodMonthly: 0, otherMonthly: 0, storageMonthly: 0, familyInsuranceMonthly: 0,
     sharedLivingCosts: true,
     propertyCostsEstimated: false, propertyCostsConfirmed: false, ibiLiquidableBase: null, ibiRatePercent: null,
     utilityBreakdown: { waterMonthly: 0, energyMonthly: 0, internetMonthly: 0, otherMonthly: 0 },
@@ -524,7 +524,7 @@ export function validateScenario(input = {}) {
     if (n(s.mortgage.ltv) > 0.8) warnings.push('Revisa la compatibilidad del porcentaje bancario con ICF.');
     warnings.push('ICF incorpora obligaciones y protección oficial de la vivienda; consulta sus condiciones antes de comprometer arras.');
   }
-  const monthlyKeys = ['existingDebtMonthly', 'familyIncomeMonthly', 'familyExistingDebtMonthly', 'utilitiesMonthly', 'carMonthly', 'foodMonthly', 'otherMonthly', 'storageMonthly', 'ibiAnnual', 'wasteAnnual', 'maintenanceAnnual', 'communityMonthly', 'externalHomeInsuranceAnnual', 'currentRent', 'currentUtilitiesMonthly', 'currentOtherMonthly'];
+  const monthlyKeys = ['existingDebtMonthly', 'familyIncomeMonthly', 'familyExistingDebtMonthly', 'utilitiesMonthly', 'carMonthly', 'foodMonthly', 'otherMonthly', 'storageMonthly', 'familyInsuranceMonthly', 'ibiAnnual', 'wasteAnnual', 'maintenanceAnnual', 'communityMonthly', 'externalHomeInsuranceAnnual', 'currentRent', 'currentUtilitiesMonthly', 'currentOtherMonthly'];
   for (const key of monthlyKeys) numeric(s.budget[key], `Presupuesto ${key}`, 0, Infinity, key === 'externalHomeInsuranceAnnual');
   // University tuition is a dated household expense belonging to the brother,
   // not a credit installment for the borrowers' bank debt ratio. Validate this
@@ -804,10 +804,11 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
   if (currentUtilitiesUnitemizedMonthly > 0 && currentUtilitiesDetailedMonthly > 0 && !sharedLivingCosts) warnings.push(`Se conservan un importe conjunto y un desglose de suministros actuales: solo se cuenta ${currentUtilityMode === 'aggregate' ? 'el importe conjunto' : 'el desglose'}.`);
   if (sharedLivingCosts && (currentUtilitiesUnitemizedMonthly > 0 || currentUtilitiesDetailedMonthly > 0) && Math.abs(currentUtilitiesIndependentMonthly - utilitiesMonthly) > 0.005) warnings.push('Se usan los mismos suministros en alquiler y compra. Los importes actuales anteriores, distintos, se conservan como referencia y no se suman.');
   const storageMonthly = nonnegative(s.budget.storageMonthly);
+  const familyInsuranceMonthly = nonnegative(s.budget.familyInsuranceMonthly);
   const university = s.familyPlan?.university;
   const universityMonthly = university && (university.startMonth == null || asOfMonth >= university.startMonth)
     && isMonth(university.endMonth) && asOfMonth <= university.endMonth ? nonnegative(university.amount) : 0;
-  const householdMonthly = nonnegative(s.budget.carMonthly) + nonnegative(s.budget.foodMonthly) + nonnegative(s.budget.otherMonthly) + storageMonthly + universityMonthly;
+  const householdMonthly = nonnegative(s.budget.carMonthly) + nonnegative(s.budget.foodMonthly) + nonnegative(s.budget.otherMonthly) + storageMonthly + universityMonthly + familyInsuranceMonthly;
   const knownFamilyPayment = nonnegative(familyLoan.monthlyPayment);
   const personalCommitments = calculatePersonalCommitments(s.familyPlan ?? {}, {asOfMonth});
   const baseExistingDebtMonthly = s.familyPlan?.personalDebtEndMonth == null || asOfMonth <= s.familyPlan.personalDebtEndMonth ? nonnegative(s.budget.existingDebtMonthly) : 0;
@@ -861,7 +862,7 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
     mortgageOnly, homeMonthly, propertyOverheadMonthly, annualHomeCostsMonthly,
     insuranceMonthly: recurringInsuranceMonthly + externalHomeMonthly,
     upfrontInsuranceMonthlyEquivalent, utilitiesMonthly, householdMonthly,
-    storageMonthly, sharedLivingCosts, currentUtilitiesIndependentMonthly,
+    storageMonthly, familyInsuranceMonthly, sharedLivingCosts, currentUtilitiesIndependentMonthly,
     propertyCostsEstimated:s.budget.propertyCostsEstimated, propertyCostsConfirmed:s.budget.propertyCostsConfirmed,
     purchaseFeesEstimated,
     utilityBreakdown, utilitiesUnitemizedMonthly, currentUtilitiesMonthly,

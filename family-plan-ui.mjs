@@ -1,6 +1,6 @@
-import {buildSavingsProjection} from './savings-projection.mjs?v=31';
-import {renderSavingsChart} from './savings-chart-ui.mjs?v=31';
-import {renderPersonalCommitments} from './personal-commitments-ui.mjs?v=31';
+import {buildSavingsProjection} from './savings-projection.mjs?v=32';
+import {renderSavingsChart} from './savings-chart-ui.mjs?v=32';
+import {renderPersonalCommitments} from './personal-commitments-ui.mjs?v=32';
 
 const PERSON_IDS = ['buyer1', 'buyer2', 'mother', 'sister'];
 const PERSON_LABELS = {buyer1: 'Tú', buyer2: 'Tu hermano', mother: 'Tu madre', sister: 'Tu hermana'};
@@ -113,7 +113,7 @@ export function renderFamilyPlan(scenario, timeline, {euro, esc, selectedMonth, 
   const detailValue = (person, key) => key === 'externalIncome' ? externalIncome(person) : key === 'cashRemaining' ? cashRemaining(person) : key === 'cashCost' ? cashCost(person) : ['familySupportPaid', 'familySupportReceived', 'livingContributionPaid', 'livingContributionReceived', 'savingsUsed', 'savingsBalance', 'salaryExtra', 'extraordinaryIncome', 'debtSettlement', 'reservedExtraordinary'].includes(key) ? fundingSource(person, key) : person?.[key];
   const componentValue = (row, personId, [, key, read]) => read ? read(row.people?.[personId] || {}) : row.people?.[personId]?.[key];
   const breakdownComponents = row => {
-    const commonComponents = [['Alquiler actual', 'rent'], ['Comida', 'food'], ['Suministros', 'utilities'], ['Otros gastos comunes', 'commonOther']];
+    const commonComponents = [['Alquiler actual', 'rent'], ['Comida', 'food'], ['Suministros', 'utilities'], ['Seguro familiar común', 'familyInsurance'], ['Otros gastos comunes', 'commonOther']];
     const hasCommonComponents = commonComponents.some(([, key]) => people.some(person => Object.hasOwn(row.people?.[person.id] || {}, key)));
     const commitments = new Map();
     for (const person of people) for (const item of row.people?.[person.id]?.personalCommitments || []) {

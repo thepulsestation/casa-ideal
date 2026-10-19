@@ -1,5 +1,5 @@
-import {safeImageUrl} from './housing.mjs?v=31';
-import {analyzeHome,rankHomes,getHousingHighlights,HOUSING_SORT_OPTIONS} from './property-analysis.mjs?v=31';
+import {safeImageUrl} from './housing.mjs?v=32';
+import {analyzeHome,rankHomes,getHousingHighlights,HOUSING_SORT_OPTIONS} from './property-analysis.mjs?v=32';
 export const hasBudgetEstimates=(s,r)=>Boolean(r.budget?.propertyCostsEstimated||r.budget?.assumedLoanTerms||r.cash?.purchaseFeesEstimated||r.familyLoan?.termsAssumed||s.familyLoan?.assumedTerms||r.icf?.hypothetical);
 export function renderPropertyGallery(images,name,esc){
  const safe=Array.isArray(images)?images.map(safeImageUrl).filter(Boolean).slice(0,8):[];
@@ -16,7 +16,9 @@ export function renderRentalComparison(s,r,{euro,esc}){
  <div class="table-wrap"><table><thead><tr><th>Presupuesto familiar completo / mes</th><th class="number">Alquilando</th><th class="number">Comprando</th></tr></thead><tbody>
  <tr><td>Vivienda y suministros</td><td class="number">${euro(currentHousing,2)}</td><td class="number">${prefix+euro(futureHousing,2)}</td></tr>
  <tr><td>Préstamos que ya pagáis</td><td class="number">${euro(b.existingDebtMonthly+b.familyExistingDebtMonthly,2)}</td><td class="number">${euro(b.existingDebtMonthly+b.familyExistingDebtMonthly,2)}</td></tr>
- <tr><td>Comida, transporte, trastero y demás vida</td><td class="number">${euro(b.householdMonthly,2)}</td><td class="number">${euro(b.householdMonthly,2)}</td></tr>
+ <tr><td>Comida, transporte, trastero y demás vida</td><td class="number">${euro(b.householdMonthly-(b.familyInsuranceMonthly||0),2)}</td><td class="number">${euro(b.householdMonthly-(b.familyInsuranceMonthly||0),2)}</td></tr>
+ ${b.familyInsuranceMonthly>0?`<tr><td>Seguro familiar común</td><td class="number">${euro(b.familyInsuranceMonthly,2)}</td><td class="number">${euro(b.familyInsuranceMonthly,2)}</td></tr>`:''}
+ ${b.personalExpenseMonthly>0?`<tr><td>Pagos personales y transporte público</td><td class="number">${euro(b.personalExpenseMonthly,2)}</td><td class="number">${euro(b.personalExpenseMonthly,2)}</td></tr>`:''}
  <tr class="comparison-total"><td><strong>Total familiar</strong></td><td class="number"><strong>${euro(b.currentComparable,2)}</strong></td><td class="number"><strong>${prefix+euro(b.totalMonthly,2)}</strong></td></tr>
  </tbody></table></div>
  <div class="comparison-message"><strong>${approximate?'≈ ':''}${difference>=0?'+':'−'}${euro(Math.abs(difference),2)} /mes al comprar, con lo introducido</strong><p>${b.incomplete?'Comparación provisional: faltan gastos o datos por comprobar. ':''}${approximate?'Incluye hipótesis de intereses o provisiones; el resultado puede cambiar. ':''}La cuota hipotecaria sola es un componente del total.</p></div>

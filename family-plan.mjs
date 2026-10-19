@@ -1,6 +1,6 @@
-import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=31';
-import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=31';
-import {DEFAULT_RENT_CHANGE, normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=31';
+import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=32';
+import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=32';
+import {DEFAULT_RENT_CHANGE, normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=32';
 
 // This plan allocates cash between residents. It never changes the bank's
 // definition of debt. Covering a resident's deficit requires an explicit plan.
@@ -229,11 +229,12 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
   // that aggregate before assigning this calendar's payment to its real payer.
   const sharedLife = money(calculated.budget.householdMonthly - Number(calculated.budget.universityMonthly || 0));
   const personalTransport = plan.transportOwner === null ? 0 : money(scenario.budget.carMonthly);
-  const foodMonthly = money(scenario.budget.foodMonthly), otherLife = money(sharedLife - foodMonthly - personalTransport);
+  const familyInsurance = money(calculated.budget.familyInsuranceMonthly || 0);
+  const foodMonthly = money(scenario.budget.foodMonthly), otherLife = money(sharedLife - foodMonthly - personalTransport - familyInsurance);
   const currentCosts = {food: foodMonthly, utilities: calculated.budget.currentUtilitiesMonthly,
-    commonOther: total([otherLife, Number(scenario.budget.currentOtherMonthly)])};
+    commonOther: total([otherLife, Number(scenario.budget.currentOtherMonthly)]), familyInsurance};
   const ownedCosts = {rent: 0, food: foodMonthly, utilities: calculated.budget.utilitiesMonthly,
-    commonOther: total([calculated.budget.propertyOverheadMonthly, otherLife])};
+    commonOther: total([calculated.budget.propertyOverheadMonthly, otherLife]), familyInsurance};
   const missingPayments = motherSchedule === null || calculated.motherTransfer.mode === 'family-loan' && calculated.motherTransfer.amount > 0 && transferSchedule === null;
   let sisterSavingsBalance = plan.sisterSupport.enabled ? plan.sisterSupport.savingsAtPurchase : 0;
   const rows = Array.from({length: months}, (_, offset) => {
@@ -256,7 +257,7 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
     const hasUnassignedMode = currentAllocationApplied && plan.currentAllocation.otherCostMode === 'unassigned';
     const componentParts = Object.fromEntries(Object.entries(costs).map(([key, amount]) => [key,
       hasUnassignedMode && key === 'commonOther' ? ROLES.map(() => 0) : allocate(amount,
-        !currentAllocationApplied ? shares : key === 'rent' ? rentShares : key === 'food' || key === 'utilities' || plan.currentAllocation.otherCostMode === 'living-pool' ? livingShares : costShares(plan.currentAllocation.otherCostMode, incomes))]));
+        key === 'familyInsurance' ? costShares('workers', incomes) : !currentAllocationApplied ? shares : key === 'rent' ? rentShares : key === 'food' || key === 'utilities' || plan.currentAllocation.otherCostMode === 'living-pool' ? livingShares : costShares(plan.currentAllocation.otherCostMode, incomes))]));
     const unassignedExpenses = hasUnassignedMode ? costs.commonOther : 0;
     const hasUnassignedExpenses = unassignedExpenses === null || unassignedExpenses > 0;
     const common = total(Object.values(costs)), commonParts = ROLES.map((role, index) => total(Object.values(componentParts).map(parts => parts[index])));
@@ -270,7 +271,7 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
     const people = Object.fromEntries(persons.map((person, index) => {
       const fixedPersonalDebt = total([person.id === plan.personalDebtOwner ? personal : 0, person.id === 'mother' ? money(scenario.budget.familyExistingDebtMonthly) : 0, commitmentState.debtByOwner[person.id]]);
       const entry = {income: incomes[index], salaryExtra: salaryExtras[index], common: commonParts[index], rent: componentParts.rent[index], food: componentParts.food[index],
-        utilities: componentParts.utilities[index], commonOther: componentParts.commonOther[index], fixedPersonalDebt, university: universityParts[index],
+        utilities: componentParts.utilities[index], commonOther: componentParts.commonOther[index], familyInsurance: componentParts.familyInsurance[index], fixedPersonalDebt, university: universityParts[index],
         personalCommitments: commitmentState.activeByOwner[person.id], personalCommitmentDebt: commitmentState.debtByOwner[person.id], personalExpense: commitmentState.expenseByOwner[person.id],
         transportExpense: person.id === plan.transportOwner ? personalTransport : 0,
         publicTransportExpense: publicTransport.byOwner[person.id],
@@ -286,10 +287,12 @@ export function calculateFamilyTimeline(input, {startMonth = '2026-10', months =
       return [person.id, entry];
     }));
     if (owning && plan.purchaseAllocation === 'shared-household') {
-      const sharedTargets = allocate(total([common, university, mortgage, motherBankPayment, icf]), shares);
+      // The family policy keeps its explicit equal-among-earners allocation,
+      // independent of the selected distribution of other shared costs.
+      const sharedTargets = allocate(total([common === null ? null : money(common - familyInsurance), university, mortgage, motherBankPayment, icf]), shares);
       persons.forEach((person, index) => {
         const entry = people[person.id];
-        const originalShared = total([entry.common, entry.university, entry.mortgage, entry.familyRepayment, entry.motherBankPayment, entry.icfRepayment]);
+        const originalShared = total([entry.common === null || entry.familyInsurance === null ? null : money(entry.common - entry.familyInsurance), entry.university, entry.mortgage, entry.familyRepayment, entry.motherBankPayment, entry.icfRepayment]);
         entry.householdRedistribution = sharedTargets[index] === null || originalShared === null || entry.internalReceived === null ? null : money(sharedTargets[index] - originalShared + entry.internalReceived);
         entry.expenses = total([entry.expenses, entry.householdRedistribution]);
         entry.remaining = entry.expenses === null || entry.internalReceived === null ? null : money(entry.income + entry.internalReceived + entry.livingContributionReceived - entry.expenses);

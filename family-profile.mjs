@@ -1,6 +1,6 @@
-// One shared household budget; property taxes, insurance and upkeep stay per home.
+// One shared household budget; property taxes, mortgage insurance and upkeep stay per home.
 export const FAMILY_PROFILE_ID = 'casa-ideal-family-budget-v1';
-const BUDGET_KEYS = ['incomes','householdIncomes','existingDebtMonthly','familyIncomeMonthly','familyExistingDebtMonthly','utilitiesMode','utilitiesMonthly','utilityBreakdown','sharedLivingCosts','currentUtilitiesMode','currentUtilitiesMonthly','currentUtilityBreakdown','currentRent','currentOtherMonthly','carMonthly','foodMonthly','storageMonthly','otherMonthly','debtRatioLimit'];
+const BUDGET_KEYS = ['incomes','householdIncomes','existingDebtMonthly','familyIncomeMonthly','familyExistingDebtMonthly','utilitiesMode','utilitiesMonthly','utilityBreakdown','sharedLivingCosts','currentUtilitiesMode','currentUtilitiesMonthly','currentUtilityBreakdown','currentRent','currentOtherMonthly','carMonthly','foodMonthly','storageMonthly','otherMonthly','familyInsuranceMonthly','debtRatioLimit'];
 export const isFamilyProfile = row => row?.id === FAMILY_PROFILE_ID && row?.kind === 'family-budget';
 export function isFamilyField(path) { return path === 'familyPlan' || path.startsWith('familyPlan.') || path === 'cash.savings' || path.startsWith('stress.') || BUDGET_KEYS.some(key => path === 'budget.'+key || path.startsWith('budget.'+key+'.')); }
 export function extractFamilyProfile(s, previous = null) {

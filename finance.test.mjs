@@ -10,6 +10,33 @@ import {
 
 const close = (actual, expected, tolerance = 0.005) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} ≠ ${expected}`);
 
+test('family insurance is a household cost in rent, purchase and stress, while dated personal insurance ends after February', () => {
+ const source = normalizeScenario({budget: {incomes: [{monthly: 2078, payments: 12}, {monthly: 1430.06, payments: 14}], householdIncomes: [{id: 'mother', monthly: 1200, payments: 14}], existingDebtMonthly: 262}, stress: {expenseIncreasePercent: 10}});
+ const insured = structuredClone(source);
+ insured.budget.familyInsuranceMonthly = 243;
+ insured.familyPlan = {personalCommitments: [{id: 'personal-insurance', label: 'Personal policy', owner: 'buyer1', kind: 'expense', monthly: 30, startMonth: '2026-10', endMonth: '2027-02'}]};
+ for (const month of ['2026-10', '2027-02', '2027-03', '2027-06']) {
+  const baseline = calculateScenario(source, {asOfMonth: month}), updated = calculateScenario(insured, {asOfMonth: month});
+  const increment = month <= '2027-02' ? 273 : 243;
+  assert.equal(updated.valid, true);
+  assert.equal(updated.budget.familyInsuranceMonthly, 243);
+  close(updated.budget.householdMonthly - baseline.budget.householdMonthly, 243);
+  close(updated.budget.totalMonthly - baseline.budget.totalMonthly, increment);
+  close(updated.budget.currentComparable - baseline.budget.currentComparable, increment);
+  close(baseline.budget.remainingRegular - updated.budget.remainingRegular, increment);
+  close(updated.stress.totalMonthly - baseline.stress.totalMonthly, increment * 1.1);
+  assert.equal(updated.budget.debtRatio, baseline.budget.debtRatio);
+  assert.equal(updated.budget.familyDebtRatio, baseline.budget.familyDebtRatio);
+  assert.equal(updated.budget.bankExistingDebtMonthly, 262);
+  assert.equal(updated.budget.insuranceMonthly, baseline.budget.insuranceMonthly, 'the existing family policy is separate from mortgage-related insurance');
+ }
+ assert.equal(DEFAULT_SCENARIO.budget.familyInsuranceMonthly, 0, 'no private policy amount is a public default');
+ for (const bad of [-1, null, '', Infinity, 'unconfirmed']) {
+  const invalid = structuredClone(source); invalid.budget.familyInsuranceMonthly = bad;
+  assert.equal(calculateScenario(invalid).valid, false, String(bad));
+ }
+});
+
 test('a dated rent update changes the rental comparison without changing ownership cost or bank debt', () => {
   const source = normalizeScenario({budget: {currentRent: 1014.35}, familyPlan: {rentChange: {enabled: true, fromMonth: '2026-11', monthly: 1064}}});
   const october = calculateScenario(source, {asOfMonth: '2026-10'});

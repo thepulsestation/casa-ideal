@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeScenario, calculateScenario} from './finance.mjs';
 import {DEFAULT_FAMILY_PLAN, normalizeFamilyPlan, validateFamilyPlan, calculateFamilyTimeline} from './family-plan.mjs';
+import {buildSavingsProjection} from './savings-projection.mjs';
 
 const close = (actual, expected, tolerance = 0.011) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`);
 
@@ -45,6 +46,55 @@ const fixture = (overrides = {}) => normalizeScenario({
   },
   familyPlan: {sharedCostMode: 'equal', university: {amount: 450, endMonth: '2027-06'}, sisterJob: {enabled: true, amount: 400, startMonth: '2027-01'}},
   ...overrides,
+});
+
+test('family insurance is shared among earners in both phases and personal insurance is charged only through February', () => {
+ const source = fixture();
+ source.familyPlan.purchaseMonth = '2027-06'; source.familyPlan.motherLoanStartMonth = '2027-04';
+ source.familyPlan.sharedCostMode = 'workers'; source.familyPlan.purchaseAllocation = 'shared-household';
+ source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', otherCostMode: 'living-pool', motherContributionMonthly: 1100, contributionIncludesUniversity: true};
+ const updated = structuredClone(source); updated.budget.familyInsuranceMonthly = 243;
+ updated.familyPlan.personalCommitments = [{id: 'personal-insurance', label: 'Personal policy', owner: 'buyer1', kind: 'expense', monthly: 30, startMonth: '2026-10', endMonth: '2027-02'}];
+ const before = calculateFamilyTimeline(source, {startMonth: '2026-10', months: 10}), after = calculateFamilyTimeline(updated, {startMonth: '2026-10', months: 10});
+ assert.equal(after.valid, true);
+ for (const [index, row] of after.months.entries()) {
+  const prior = before.months[index], personal = row.month <= '2027-02' ? 30 : 0;
+  const share = row.people.sister.income > 0 ? 60.75 : 81;
+  assert.equal(row.household.familyInsurance, 243);
+  close(row.household.expenses - prior.household.expenses, 243 + personal);
+  close(prior.household.cashRemaining - row.household.cashRemaining, 243 + personal);
+  for (const id of ['buyer1', 'buyer2', 'mother', 'sister']) {
+   const amount = id === 'sister' && row.people.sister.income === 0 ? 0 : share;
+   assert.equal(row.people[id].familyInsurance, amount);
+   close(row.people[id].expenses - prior.people[id].expenses, amount + (id === 'buyer1' ? personal : 0));
+   assert.equal(row.people[id].personalExpense, id === 'buyer1' ? personal : 0);
+  }
+  assert.equal(row.bankDebtMonthly, prior.bankDebtMonthly);
+  assert.equal(row.bankDebtRatio, prior.bankDebtRatio);
+  close(Object.values(row.people).reduce((sum, person) => sum + person.expenses - person.internalReceived - person.livingContributionReceived, 0), row.household.expenses);
+  close(Object.values(row.people).reduce((sum, person) => sum + person.cashRemaining, 0), row.household.cashRemaining);
+ }
+ const previousSavings = buildSavingsProjection(before), updatedSavings = buildSavingsProjection(after);
+ assert.equal(updatedSavings.cutoffMonth, '2027-05');
+ close(previousSavings.totals.household - updatedSavings.totals.household, 243 * 8 + 30 * 5);
+});
+
+test('the family policy keeps its workers allocation when other current or owned costs use another split', () => {
+ for (const sharedCostMode of ['equal', 'income', 'borrowers']) {
+  const source = fixture(); source.familyPlan.sharedCostMode = sharedCostMode;
+  source.familyPlan.purchaseAllocation = 'shared-household'; source.familyPlan.sisterJob.enabled = false;
+  source.familyPlan.purchaseMonth = '2026-11'; source.familyPlan.motherLoanStartMonth = '2026-11';
+  source.familyPlan.currentAllocation = {enabled: true, rentPayer: 'buyer1', otherCostMode: 'unassigned'};
+  const insured = structuredClone(source); insured.budget.familyInsuranceMonthly = 243;
+  const before = calculateFamilyTimeline(source, {startMonth: '2026-10', months: 3}), after = calculateFamilyTimeline(insured, {startMonth: '2026-10', months: 3});
+  assert.equal(after.valid, true);
+  for (const [index, row] of after.months.entries()) {
+   for (const role of ['buyer1', 'buyer2', 'mother']) close(row.people[role].expenses - before.months[index].people[role].expenses, 81);
+   assert.equal(row.people.sister.familyInsurance, 0);
+   assert.equal(row.people.sister.expenses, before.months[index].people.sister.expenses);
+   close(row.household.expenses - before.months[index].household.expenses, 243);
+  }
+ }
 });
 
 test('the rent change takes effect in November only and remains the agreed rent payer\'s expense', () => {

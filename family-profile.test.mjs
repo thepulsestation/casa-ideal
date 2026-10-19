@@ -64,3 +64,22 @@ test('a dated personal-expense plan is shared and detached without replacing a h
  for(const path of ['familyPlan.sharedCostMode','familyPlan.university.amount','familyPlan.sisterJob.startMonth'])assert.equal(isFamilyField(path),true);
  assert.equal(isFamilyField('familyPlanExtra.amount'),false);
 });
+
+test('family insurance and the expiring personal policy are shared across homes without becoming mortgage insurance or debt', () => {
+ const first = scenario(); first.budget.familyInsuranceMonthly = 243;
+ first.familyPlan = {personalCommitments: [{id: 'personal-insurance', label: 'Personal policy', owner: 'buyer1', kind: 'expense', monthly: 30, endMonth: '2027-02'}]};
+ const profile = extractFamilyProfile(first), other = scenario();
+ other.budget.familyInsuranceMonthly = 0; other.budget.externalHomeInsuranceAnnual = 360;
+ other.budget.familyExistingDebtMonthly = 40;
+ const applied = applyFamilyProfile(other, profile);
+ assert.equal(isFamilyField('budget.familyInsuranceMonthly'), true);
+ assert.equal(profile.budget.familyInsuranceMonthly, 243);
+ assert.equal(applied.budget.familyInsuranceMonthly, 243);
+ assert.equal(applied.budget.externalHomeInsuranceAnnual, 360);
+ assert.equal(applied.budget.familyExistingDebtMonthly, first.budget.familyExistingDebtMonthly);
+ assert.equal(applied.familyPlan.personalCommitments[0].kind, 'expense');
+ assert.equal(applied.familyPlan.personalCommitments[0].endMonth, '2027-02');
+ applied.familyPlan.personalCommitments[0].monthly = 0;
+ assert.equal(profile.familyPlan.personalCommitments[0].monthly, 30);
+ assert.equal(other.budget.familyInsuranceMonthly, 0);
+});
