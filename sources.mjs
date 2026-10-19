@@ -64,6 +64,12 @@ export const SOURCES = [
     summary: 'Desde el 27/06/2025 puede bonificarse el 100 % del AJD de adquisición de vivienda habitual para personas de 35 años o menos, con renta fiscal máxima de 36.000 €. Esta bonificación no elimina el IVA.',
   },
   {
+    id: 'sabadell-provision-fondos',
+    title: 'Sabadell · Cuándo se pide la provisión de fondos',
+    url: 'https://www.bancsabadell.com/bsnacional/es/blog/que-es-la-provision-de-fondos-de-una-hipoteca/',
+    summary: 'El banco puede exigir la provisión antes de formalizar la operación. Hay que confirmar cuándo se retienen impuestos y gastos y cómo se coordinan con las arras y los desembolsos. La provisión estimada por vosotros no sustituye la que solicite la gestoría; su liquidación se justifica con facturas y se devuelve lo que sobre.',
+  },
+  {
     id: 'icf-emancipacio',
     title: 'ICF · Préstec Habitatge Emancipació',
     url: 'https://www.icf.cat/es/prestecs/habitatge/icf-habitatge-emancipacio',
@@ -330,6 +336,7 @@ export const QUESTIONS_FOR_BANK = [
   '¿Qué parte de la compraventa financian si la tasación resulta inferior al precio?',
   '¿Cómo tratarán el préstamo bancario de la madre y el préstamo familiar a los compradores?',
   '¿Cuándo se dispone de cada financiación y cómo se cubren las arras antes de escriturar?',
+  'Si ya hemos pagado arras, ¿se ingresarán íntegros el 80 % de hipoteca y el 20 % del ICF y quedará disponible ese anticipo? ¿La provisión de impuestos y gastos se exige antes o después de ese ingreso? Necesitamos un calendario de saldos por escrito.',
   '¿Cuál es el presupuesto desglosado de provisión de fondos, separando compra e hipoteca?',
 ];
 

@@ -1,4 +1,4 @@
-import {calculateScenario, getPurchaseProvisionAmount, normalizeScenario} from './finance.mjs?v=28';
+import {calculateScenario, getPurchaseProvisionAmount, normalizeScenario} from './finance.mjs?v=29';
 
 const unique = values => [...new Set(values.filter(Boolean))];
 const moneyTolerance = 0.005;
@@ -138,6 +138,7 @@ export function calculatePurchaseCapacity(input = {}, options = {}) {
     bankLtv: template.mortgage.ltv, icfLtv: template.icf.ltv,
     icfEnabled: template.icf.enabled, icfMaxAmount: template.icf.maxAmount,
     loanLimit: template.familyLoan.enabled ? template.familyLoan.maxAmount : 0,
+    loanReferenceLimit: template.familyLoan.reportedLimit?.maxAmount ?? template.familyLoan.referenceOffer?.maxAmount ?? null,
     loanYears: template.familyLoan.years, loanRate: template.familyLoan.rate,
     familyRate: template.motherTransfer.familyRate,
     familyYears: template.motherTransfer.familyYears,
@@ -187,6 +188,13 @@ export function calculatePurchaseCapacity(input = {}, options = {}) {
     borrowerDebtRatio: reference.budget.debtRatio,
     icfPrincipal: reference.icf.principal,
     tax: reference.tax.total, fees: reference.cash.purchaseFees,
+    priceContribution: reference.cash.priceContribution,
+    otherInitialCosts: Math.max(0,reference.cash.totalRequired-reference.cash.priceContribution-reference.tax.total-reference.cash.purchaseFees-reference.cash.moving-reference.cash.totalReserve),
+    finalNetFundingNeed: reference.cash.motherFundingNeed.netAfterSavings,
+    upfrontFundingExtra: reference.cash.earlyLiquidityExtraBorrowing,
+    depositAmount: reference.cash.depositAmount,
+    depositReleasePending: reference.cash.depositReleasePending,
+    depositReleaseAtRisk: reference.cash.depositReleaseAtRisk,
     moving: reference.cash.moving, buffer: reference.cash.totalReserve,
     cashRequired: reference.cash.totalRequired, savings: reference.cash.savings,
     earlyCashRequired: reference.cash.beforeMortgageRequired,

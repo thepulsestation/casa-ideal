@@ -1270,3 +1270,20 @@ test('percentage provision validates its basis, rate and effective prepaid ceili
   assert.equal(calculateScenario({purchasePrice:175000,purchaseCosts:{...costs,...override}}).valid,false);
  }
 });
+
+
+test('a confirmed arras offset restores only the original advance, never another purchase expense',()=>{
+ const input={...planningExample(),purchasePrice:210000,purchaseCosts:{mode:'provision',provisionBasis:'percent',provisionPercent:2},cash:{depositAmount:10000,familyLoanAvailableBeforeDeposit:true,depositFundingMode:'offset-confirmed'}};
+ const r=calculateScenario(input);
+ assert.equal(r.familyLoan.principal,17700);assert.equal(r.financing.priceStillDueToSeller,200000);
+ const afterAdvance=r.familyLoan.principal-r.cash.beforeMortgageRequired;
+ const releasedAdvance=r.mortgage.principal+r.icf.principal-r.financing.priceStillDueToSeller;
+ assert.equal(afterAdvance,7700);assert.equal(releasedAdvance,10000);
+ assert.equal(afterAdvance+releasedAdvance-r.tax.total-r.cash.purchaseFees,3000);
+ const biggerAdvance=calculateScenario({...input,cash:{...input.cash,depositAmount:21000}});
+ assert.equal(biggerAdvance.cash.totalRequired,17700);assert.equal(biggerAdvance.familyLoan.principal,21000);
+ assert.equal(biggerAdvance.cash.earlyLiquidityExtraBorrowing,3300);
+ assert.equal(biggerAdvance.familyLoan.principal-biggerAdvance.cash.totalRequired,3300);
+ const pending=calculateScenario({...input,cash:{...input.cash,depositFundingMode:'pending'}});
+ assert.equal(pending.cash.depositReleasePending,true);assert.equal(pending.cash.depositReleaseAtRisk,10000);
+});

@@ -268,3 +268,24 @@ test('invalid model data or search settings return a controlled error', () => {
   s.familyLoan.maxAmount = 61000;
   assert.equal(calculatePurchaseCapacity(s).valid, false);
 });
+
+
+test('visible capital breakdown separates final need from the extra amount borrowed for arras',()=>{
+ const s=base();Object.assign(s.purchaseCosts,{provisionBasis:'percent',provisionPercent:2});
+ s.familyLoan.maxAmount=21500;s.familyLoan.reportedLimit={maxAmount:21500,maxYears:8};
+ const c=calculatePurchaseCapacity(s,{searchCeiling:210000}),r=c.summary;
+ assert.equal(c.maxPrice,210000);assert.equal(c.financingAssumptions.loanReferenceLimit,21500);
+ assert.equal(r.mortgagePrincipal,168000);assert.equal(r.icfPrincipal,42000);
+ assert.equal(r.tax,10500);assert.equal(r.fees,4200);assert.equal(r.buffer,3000);assert.equal(r.moving,600);
+ assert.equal(r.priceContribution,0);assert.equal(r.otherInitialCosts,0);
+ assert.equal(r.cashRequired,18300);assert.equal(r.finalNetFundingNeed,18300);
+ assert.equal(r.depositAmount,21000);assert.equal(r.loanRequired,21000);assert.equal(r.upfrontFundingExtra,2700);
+ assert.equal(r.depositReleasePending,true);assert.equal(r.depositReleaseAtRisk,21000);
+ assert.equal(r.cashRequired+r.upfrontFundingExtra-r.savings,r.loanRequired);
+ const fixedAdvance=calculateScenario({...s,purchasePrice:210000,cash:{...s.cash,depositAmount:10000}});
+ assert.equal(fixedAdvance.familyLoan.principal,18300);assert.equal(fixedAdvance.cash.earlyLiquidityExtraBorrowing,0);
+ s.mortgage.originationFeePercent=.1;
+ const withFee=calculatePurchaseCapacity(s,{searchCeiling:210000}).summary;
+ assert.equal(withFee.otherInitialCosts,168);assert.equal(withFee.cashRequired,18468);
+ assert.equal(withFee.cashRequired,withFee.tax+withFee.fees+withFee.moving+withFee.buffer+withFee.otherInitialCosts+withFee.priceContribution);
+});

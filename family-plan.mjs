@@ -1,5 +1,5 @@
-import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=28';
-import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=28';
+import {calculateScenario as calculateDefaultScenario, normalizeScenario} from './finance.mjs?v=29';
+import {normalizePersonalCommitments, calculatePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=29';
 
 // This plan allocates cash between residents. It never changes the bank's
 // definition of debt. Covering a resident's deficit requires an explicit plan.
