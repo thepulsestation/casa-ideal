@@ -1,8 +1,16 @@
 # Casa Ideal
 
-Calculadora familiar de compra de vivienda en Cataluña, centrada en los escenarios comentados con Banco Sabadell. Aplicación estática sin instalación ni servicios de pago necesarios para calcular.
+Calculadora familiar de compra de vivienda en Cataluña, con escenarios comunicados por Sabadell y Santander. Aplicación estática sin instalación ni servicios de pago necesarios para calcular.
 
 ## Uso
+
+«Nuestra presentación» recorre la decisión en 16 diapositivas con gráficos y guion por diapositiva. Sus cifras y notas se generan con el presupuesto familiar vigente; el reproductor admite flechas, deslizamiento en móvil, selección de diapositiva y pantalla completa. El precio de una vivienda guardada no determina la búsqueda. Los ajustes genéricos y las ofertas se conservan en el perfil familiar compartido, separados de los inmuebles.
+
+«Comparar bancos» usa como límite el gasto del mes actual indicado, separado del mes futuro de compra. Parte de ahorro de compra cero y préstamo de mamá limitado a 21.500 €, editables. La provisión genérica distingue IBI de 1.500 €/año (125 €/mes), residuos, comunidad/conservación y seguros hipotecarios; las primas pendientes permanecen sin cotizar. El precio mostrado es un techo con los costes conocidos, condicionado al efectivo por fechas, el esfuerzo de los titulares y los presupuestos pendientes. Se advierte si la transición de alquiler más préstamo de mamá supera el gasto actual.
+
+Las ofertas de búsqueda reproducen las condiciones comunicadas: Sabadell 3,75 % base y 2,70 % completo; la referencia de 3,30 % con solo nómina se deduce del bloque de seguros de 0,60 puntos y requiere confirmación. Santander 3,95 % base y 2,95 % completo, con 0,50 puntos por nómina más Bizum/tarjeta según la simulación aportada. En Santander los seguros bonifican según las reglas e importes anuales mínimos de esa simulación: esos umbrales no son precios cotizados. Hogar y protección de préstamos pueden completar el máximo con la nómina; vida queda opcional para este objetivo. Se comparan las primas y la rebaja de cuota manteniendo la nómina, a igual capital, y se pide seguro alternativo de hogar para cerrar el ahorro neto. Las primas iniciales aumentan el efectivo requerido y su equivalente económico se muestra aparte, sin cobrarlas dos veces cada mes.
+
+Sabadell con ICF usa 80 % bancario más hasta 20 % ICF. Santander con ICF usa 75 % bancario más hasta 20 % ICF: el remanente debe financiarse junto con impuestos y gastos, y puede superar el 5 % cuando limita el ICF. Sin ICF se compara 80 %; el 90 % de Santander es una exploración desactivada inicialmente, sujeta a tasación suficiente y aprobación expresa. El origen prestado de la aportación familiar también requiere aceptación del banco. Los tipos Santander comparan la cuota estable bonificada desde el séptimo mes; el TIN de los seis meses iniciales sigue pendiente.
 
 La vista general muestra todas las viviendas guardadas. «Añadir vivienda» permite crear una casa o piso con nombre, anuncio, precio, imágenes HTTPS y notas; «Editar vivienda» conserva su identidad y sus cálculos. El nuevo escenario reutiliza los ingresos, deudas y gastos cotidianos del hogar y reinicia los datos propios del inmueble. Completa compra, hipoteca y presupuesto. Los datos pendientes se muestran como tales: no se presume que un seguro desconocido o un préstamo sin oferta cueste cero.
 

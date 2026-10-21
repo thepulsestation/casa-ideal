@@ -717,3 +717,49 @@ test('an overview personal-cost link opens that home in expense mode at the purc
  assert.match(app.html,/<option value="expenses" selected/);
  assert.equal(app.requests.filter(x=>['PATCH','POST'].includes(x.method)&&x.path==='/rest/v1/scenarios').length,0);
 });
+
+test('presentation and its script open with the family budget and visual controls do not save finances',async()=>{
+ const home=savedHome('story-home');home.familyPlan={purchaseMonth:'2027-06',motherLoanStartMonth:'2027-04'};
+ const app=boot({hash:`#presentacion?codigo=${CODE}&acceso=2&entrar=1`,joined:true,scenarios:[home]});await app.loading;
+ assert.equal(parseFamilyRoute(app.location.hash).view,'presentacion');
+ assert.match(app.html,/class="family-story"/);assert.match(app.html,/data-story-index="0"/);
+ await app.node('action-story-next').handlers.click();
+ assert.match(app.html,/data-story-index="1"/);assert.match(app.html,/Este es nuestro punto de partida/);
+ await app.node('action-story-notes').handlers.click();
+ assert.match(app.html,/id="story-speaker-notes"\s+aria-label/);
+ assert.match(app.html,/Guion para contar/);
+ assert.equal(app.requests.filter(x=>['PATCH','POST'].includes(x.method)&&x.path==='/rest/v1/scenarios').length,0);
+});
+
+test('bank settings save to the shared profile and preserve each saved property conditions',async()=>{
+ const home=savedHome('bank-home');home.familyPlan={purchaseMonth:'2027-06',motherLoanStartMonth:'2027-04'};
+ const original=structuredClone(home);
+ const app=boot({hash:`#bancos?codigo=${CODE}&acceso=2&entrar=1`,joined:true,scenarios:[home]});await app.loading;
+ assert.equal(parseFamilyRoute(app.location.hash).view,'bancos');assert.match(app.html,/homeSearch\.ownership\.ibiAnnual/);
+ const field=app.node('field-homeSearch.ownership.ibiAnnual');field.value='1800';field.type='number';
+ await field.handlers.change({target:field});await app.flushTimers();
+ const profile=app.server.get('casa-ideal-family-budget-v1')?.data;
+ assert.equal(profile.homeSearch.ownership.ibiAnnual,1800);
+ assert.equal(profile.homeSearch.offers.santander.payrollOnlyRate,3.45);
+ const unchanged=app.server.get(home.id).data;
+ assert.deepEqual(unchanged.mortgage,original.mortgage);assert.equal(unchanged.purchasePrice,original.purchasePrice);
+ assert.equal(unchanged.budget.ibiAnnual,original.budget.ibiAnnual);
+ assert.equal(app.requests.filter(x=>x.method==='PATCH'&&x.path==='/rest/v1/scenarios'&&x.query.get('id')==='eq.'+home.id).length,0);
+ app.navigate('#presentacion');
+ assert.match(app.html,/class="family-story"/);
+ await app.node('action-story-go7').handlers.click();
+ assert.match(app.html,/1\.800|1800|1&#/);
+});
+
+test('saving bank settings from a stale deleted draft keeps the current family income',async()=>{
+ const current=savedHome('current-family-home');current.budget.incomes=[{monthly:3333,payments:12},{monthly:1500,payments:12}];current.familyPlan={purchaseMonth:'2027-06'};
+ const stale=savedHome('deleted-old-draft');stale.budget.incomes=[{monthly:1111,payments:12},{monthly:500,payments:12}];stale.familyPlan={purchaseMonth:'2027-06'};
+ const app=boot({hash:`#bancos?codigo=${CODE}&acceso=2&entrar=1`,joined:true,scenarios:[current],draft:stale,draftMeta:{id:stale.id,dirty:true}});await app.loading;
+ const field=app.node('field-homeSearch.ownership.ibiAnnual');field.value='1600';field.type='number';
+ await field.handlers.change({target:field});await app.flushTimers();
+ const profile=app.server.get('casa-ideal-family-budget-v1')?.data;
+ assert.equal(profile.budget.incomes[0].monthly,3333);
+ assert.equal(profile.homeSearch.ownership.ibiAnnual,1600);
+ assert.equal(app.server.get(current.id).data.budget.incomes[0].monthly,3333);
+ assert.equal(app.requests.filter(x=>x.method==='PATCH'&&x.path==='/rest/v1/scenarios'&&x.query.get('id')==='eq.'+current.id).length,0);
+});

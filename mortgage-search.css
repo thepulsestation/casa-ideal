@@ -1,0 +1,94 @@
+.mortgage-search{--ms-forest:var(--green,#194c43);--ms-sage:#dce8d4;--ms-paper:var(--paper,#fff);--ms-line:var(--line,#e3e8e1);--ms-muted:#667970;display:grid;gap:21px;min-width:0}
+.mortgage-search .ms-intro{display:flex;align-items:center;justify-content:space-between;gap:22px}
+.mortgage-search .ms-intro h2{font-size:25px;letter-spacing:-.7px;margin-top:5px}
+.mortgage-search .ms-intro p{max-width:740px;font-size:13px;color:var(--ms-muted)}
+.mortgage-search .ms-eyebrow{display:block;font-size:10px;font-weight:750;letter-spacing:1.7px;color:#74896d;text-transform:uppercase}
+.mortgage-search .ms-hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,1fr);gap:34px;background:var(--ms-forest);color:#fffdf7;border-radius:19px;padding:32px;position:relative;overflow:hidden}
+.mortgage-search .ms-hero:after{content:"";position:absolute;left:40%;bottom:-90px;width:220px;height:270px;border:1px solid #ffffff15;border-radius:120px 120px 0 0;pointer-events:none}
+.mortgage-search .ms-hero-copy,.mortgage-search .ms-hero-metrics{position:relative;z-index:1}
+.mortgage-search .ms-hero .ms-eyebrow{color:#c0d3ac}
+.mortgage-search .ms-hero h3{font-size:18px;margin-top:17px;color:#fffdf7}
+.mortgage-search .ms-hero-price{font-family:Manrope,system-ui,sans-serif;font-size:clamp(36px,4.2vw,58px);font-weight:750;letter-spacing:-1.9px;line-height:1.17;margin:10px 0 15px;font-variant-numeric:tabular-nums}
+.mortgage-search .ms-hero-copy p{font-size:13px;color:#e2ecdf;max-width:540px;line-height:1.65;margin:0 0 16px}
+.mortgage-search .ms-hero-metrics{display:grid;gap:12px}
+.mortgage-search .ms-metric{background:#ffffff0c;padding:15px 18px;border:1px solid #ffffff1c;border-radius:12px}
+.mortgage-search .ms-metric small,.mortgage-search .ms-metric span{display:block;font-size:11px;color:#d3dfce}
+.mortgage-search .ms-metric strong{display:block;font:700 25px/1.3 Manrope,system-ui,sans-serif;letter-spacing:-.5px;margin:3px 0;font-variant-numeric:tabular-nums}
+.mortgage-search .ms-cost-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.mortgage-search .ms-cost-strip .ms-metric{background:#f3f6ef;border-color:var(--ms-line);padding:13px}
+.mortgage-search .ms-cost-strip .ms-metric small{color:var(--ms-muted);line-height:1.6;font-size:10px}
+.mortgage-search .ms-cost-strip .ms-metric strong{font-size:20px;color:var(--ms-forest);margin-top:7px}
+.mortgage-search .ms-pill{display:inline-block;padding:5px 9px;background:#eef3ea;border-radius:6px;font-size:10px;line-height:1.4;font-weight:650;color:#315544;white-space:normal}
+.mortgage-search .ms-pill.is-warning{background:#fff1dc;color:#8d6023}
+.mortgage-search .ms-pill.is-muted{background:#f1f2ef;color:#6d7972}
+.mortgage-search .ms-pill.is-soft{background:#e9f2e3;color:#315b3c}
+.mortgage-search .ms-card{background:var(--ms-paper);border:1px solid var(--ms-line);border-radius:17px;padding:25px;min-width:0}
+.mortgage-search .ms-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:19px}
+.mortgage-search .ms-card-heading h3{font-size:18px;margin-top:4px}
+.mortgage-search .ms-card-heading p{font-size:12px;color:var(--ms-muted);max-width:760px}
+.mortgage-search .ms-footnote{color:var(--ms-muted);font-size:11px;line-height:1.75;margin-top:10px;max-width:100%;overflow-wrap:anywhere}
+.mortgage-search>.ms-footnote{margin:-10px 0 0;padding:0 3px}
+.mortgage-search .ms-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+.mortgage-search .ms-form-grid.ms-three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.mortgage-search .ms-form-grid.ms-four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.mortgage-search .ms-field{display:grid;gap:7px;min-width:0;color:var(--ink,#203431);font-size:12px;font-weight:600}
+.mortgage-search .ms-field>span{line-height:1.5}
+.mortgage-search .ms-field small{font-size:11px;font-weight:400;color:var(--ms-muted)}
+.mortgage-search .ms-field input,.mortgage-search .ms-field select{width:100%;max-width:100%;min-width:0;border:1px solid #ced9cf;border-radius:8px;background:#fff;padding:11px 12px;font-size:14px;line-height:1.35;color:var(--ink,#203431)}
+.mortgage-search .ms-field input::placeholder{color:#839087;font-size:12px;opacity:1}
+.mortgage-search .ms-field .ms-field-hint{line-height:1.65;font-size:10px}
+.mortgage-search .ms-check{display:flex;align-items:flex-start;gap:10px;font-size:12px;color:var(--ink,#203431);margin-top:12px;font-weight:550}
+.mortgage-search .ms-check input{width:17px;height:17px;flex:none;accent-color:var(--ms-forest);margin:2px 0 0}
+.mortgage-search .ms-check small{display:block;font-weight:400;font-size:11px;line-height:1.6;color:var(--ms-muted);margin-top:3px}
+.mortgage-search .ms-mode-note{padding:13px 15px;background:#f2f6ec;border-radius:9px;color:#46644f;line-height:1.7;font-size:12px;margin-top:18px}
+.mortgage-search .ms-table-wrap{width:100%;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-color:#bdccbd #f2f5ee;min-width:0}
+.mortgage-search .ms-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:770px;text-align:left}
+.mortgage-search .ms-table thead th{padding:12px;background:#f2f5ee;color:#647760;font-size:10px;font-weight:750;letter-spacing:.2px;vertical-align:bottom;white-space:normal}
+.mortgage-search .ms-table thead th:first-child{border-radius:8px 0 0 8px}
+.mortgage-search .ms-table thead th:last-child{border-radius:0 8px 8px 0}
+.mortgage-search .ms-table tbody td,.mortgage-search .ms-table tbody th{padding:15px 12px;border-bottom:1px solid var(--ms-line);vertical-align:top;color:var(--ink,#203431);background:#fff}
+.mortgage-search .ms-table tbody th{font-weight:650;text-align:left;min-width:155px}
+.mortgage-search .ms-table small{display:block;font-size:10px;line-height:1.5;color:var(--ms-muted);font-weight:400;margin-top:4px}
+.mortgage-search .ms-table .ms-pill{display:block;width:max-content;max-width:165px;margin-top:6px;font-size:9px}
+.mortgage-search .ms-table .ms-number{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mortgage-search .ms-table .ms-number .ms-pill{margin-left:auto}
+.mortgage-search .ms-table tr.is-selected td,.mortgage-search .ms-table tr.is-selected th{background:#f3f7ee}
+.mortgage-search .ms-current{display:block;font-size:9px;color:#3a6947;font-weight:750;margin-top:5px}
+.mortgage-search .ms-pending{font-size:inherit;font-weight:600;color:#9c6c2b;white-space:nowrap}
+.mortgage-search .ms-hero .ms-pending{color:#f3cf8d}
+.mortgage-search .ms-manual-price{max-width:400px;margin:0 0 19px}
+.mortgage-search .ms-bonus-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.mortgage-search .ms-bonus-card{border:1px solid var(--ms-line);border-radius:13px;padding:21px;background:#fbfcf9;min-width:0}
+.mortgage-search .ms-bonus-card .ms-card-heading{margin-bottom:20px}
+.mortgage-search .ms-bonus-card h3{font-size:19px;margin:0}
+.mortgage-search .ms-bonus-rates{display:flex;align-items:center;gap:20px;margin-bottom:18px}
+.mortgage-search .ms-bonus-rates>div{flex:1;min-width:0}
+.mortgage-search .ms-bonus-rates small{display:block;font-size:10px;color:var(--ms-muted);line-height:1.5}
+.mortgage-search .ms-bonus-rates strong{display:block;font-size:27px;letter-spacing:-.5px;color:var(--ms-forest);margin-top:5px}
+.mortgage-search .ms-bonus-rates>span{color:#a7bca0;font-size:23px}
+.mortgage-search .ms-list{margin:0 0 14px}
+.mortgage-search .ms-list>div{display:flex;justify-content:space-between;gap:17px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--ms-line)}
+.mortgage-search .ms-list dt{font-size:12px;color:var(--ms-muted)}
+.mortgage-search .ms-list dd{font-weight:650;margin:0;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mortgage-search .ms-list .ms-list-total dt,.mortgage-search .ms-list .ms-list-total dd{font-weight:750;color:var(--ms-forest)}
+.mortgage-search .ms-threshold{padding:12px 14px;background:#edf3e6;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:18px;color:#3b5f46;font-size:11px;line-height:1.6}
+.mortgage-search .ms-threshold strong{white-space:nowrap;font-size:14px;color:var(--ms-forest)}
+.mortgage-search .ms-details{margin:0;border:1px solid var(--ms-line);border-radius:13px;background:#fff;padding:0 22px;min-width:0}
+.mortgage-search .ms-details>summary{font-size:13px;font-weight:650;padding:18px 0;color:var(--ms-forest);line-height:1.6}
+.mortgage-search .ms-details[open]{padding-bottom:22px}
+.mortgage-search .ms-details[open]>summary{margin-bottom:6px;border-bottom:1px solid var(--ms-line)}
+.mortgage-search .ms-details h4{font-size:13px;margin:25px 0 14px}
+.mortgage-search .ms-pending-details{background:#fff9ef;border-color:#ead8b8}
+.mortgage-search .ms-pending-details summary{color:#906523}
+.mortgage-search .ms-details ul{font-size:12px;color:#617365;line-height:1.8;padding-left:20px}
+.mortgage-search .ms-product-list{margin:22px 0 18px;display:grid;gap:14px}
+.mortgage-search .ms-product{margin:0;min-width:0;border:1px solid var(--ms-line);border-radius:10px;padding:15px 17px 18px;background:#fafbf8}
+.mortgage-search .ms-product legend{font-size:12px;font-weight:750;color:var(--ms-forest);padding:0 6px}
+.mortgage-search .ms-alert{border:1px solid #e5c8b9;background:#fff2eb;border-radius:12px;padding:18px 22px;color:#8a4e38;font-size:13px}
+.mortgage-search .ms-alert ul{padding-left:20px;margin:8px 0 0;font-size:12px;line-height:1.7}
+.mortgage-search .ms-empty{padding:20px 0;color:var(--ms-muted);font-size:12px}
+.mortgage-search .ms-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:1100px){.mortgage-search .ms-hero{grid-template-columns:1fr 1fr;padding:27px;gap:23px}.mortgage-search .ms-form-grid.ms-four{grid-template-columns:repeat(2,minmax(0,1fr))}.mortgage-search .ms-hero-price{font-size:44px}.mortgage-search .ms-card{padding:22px}.mortgage-search .ms-bonus-card{padding:17px}.mortgage-search .ms-bonus-rates strong{font-size:24px}}
+@media(max-width:800px){.mortgage-search .ms-intro{align-items:flex-start;flex-direction:column;gap:13px}.mortgage-search .ms-hero{grid-template-columns:1fr}.mortgage-search .ms-hero-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.mortgage-search .ms-metric{padding:13px}.mortgage-search .ms-metric strong{font-size:20px}.mortgage-search .ms-cost-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.mortgage-search .ms-bonus-grid{grid-template-columns:1fr}.mortgage-search .ms-form-grid.ms-three{grid-template-columns:repeat(2,minmax(0,1fr))}.mortgage-search .ms-controls .ms-form-grid{grid-template-columns:1fr}.mortgage-search .ms-card-heading{flex-wrap:wrap;gap:10px}.mortgage-search .ms-threshold{align-items:flex-start}}
+@media(max-width:500px){.mortgage-search{gap:16px}.mortgage-search .ms-hero{padding:24px 21px;border-radius:15px;gap:23px}.mortgage-search .ms-hero-price{font-size:43px}.mortgage-search .ms-hero-metrics,.mortgage-search .ms-cost-strip{grid-template-columns:1fr}.mortgage-search .ms-metric{display:grid;grid-template-columns:1fr auto;gap:2px 15px}.mortgage-search .ms-metric strong{grid-column:2;grid-row:1/3;font-size:22px;align-self:center}.mortgage-search .ms-metric span{font-size:10px}.mortgage-search .ms-card{padding:19px;border-radius:13px}.mortgage-search .ms-intro h2{font-size:23px}.mortgage-search .ms-form-grid,.mortgage-search .ms-form-grid.ms-three,.mortgage-search .ms-form-grid.ms-four{grid-template-columns:1fr}.mortgage-search .ms-details{padding:0 18px}.mortgage-search .ms-details[open]{padding-bottom:18px}.mortgage-search .ms-product{padding:12px 13px 16px}.mortgage-search .ms-table{font-size:11px}.mortgage-search .ms-table tbody td,.mortgage-search .ms-table tbody th{padding:13px 10px}.mortgage-search .ms-threshold{flex-direction:column;gap:5px}.mortgage-search .ms-list dt{font-size:11px}.mortgage-search .ms-bonus-card .ms-card-heading{align-items:center}.mortgage-search .ms-field input,.mortgage-search .ms-field select{font-size:16px}}
+@media print{.mortgage-search .ms-controls,.mortgage-search .ms-manual-price,.mortgage-search .ms-offer-form,.mortgage-search input,.mortgage-search select{display:none!important}.mortgage-search .ms-hero{background:#e9f1e1;color:#173d35}.mortgage-search .ms-hero h3,.mortgage-search .ms-hero p,.mortgage-search .ms-hero .ms-eyebrow,.mortgage-search .ms-metric small,.mortgage-search .ms-metric span{color:#365446}.mortgage-search .ms-card,.mortgage-search .ms-bonus-card{break-inside:avoid}.mortgage-search .ms-table-wrap{overflow:visible}.mortgage-search .ms-table{min-width:0;font-size:9px}}

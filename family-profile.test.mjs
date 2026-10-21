@@ -83,3 +83,19 @@ test('family insurance and the expiring personal policy are shared across homes 
  assert.equal(profile.familyPlan.personalCommitments[0].monthly, 30);
  assert.equal(other.budget.familyInsuranceMonthly, 0);
 });
+
+test('generic bank search and presentation share their settings without changing a saved home',()=>{
+ const source=scenario();source.homeSearch={selectedBank:'santander',ownership:{ibiAnnual:1500},offers:{santander:{baseRate:3.95,fullRate:2.95}}};
+ const profile=extractFamilyProfile(source),other=scenario(),before=structuredClone(other);
+ const applied=applyFamilyProfile(other,profile);
+ assert.equal(isFamilyField('homeSearch.ownership.ibiAnnual'),true);
+ assert.equal(isFamilyField('homeSearchExtra.value'),false);
+ assert.equal(applied.homeSearch.selectedBank,'santander');
+ assert.equal(applied.homeSearch.ownership.ibiAnnual,1500);
+ assert.deepEqual(applied.mortgage,before.mortgage);
+ assert.equal(applied.budget.ibiAnnual,before.budget.ibiAnnual);
+ applied.homeSearch.offers.santander.fullRate=1;
+ assert.equal(profile.homeSearch.offers.santander.fullRate,2.95);
+ const budgetOnly=extractFamilyProfile(other,profile);
+ assert.deepEqual(budgetOnly.homeSearch,profile.homeSearch);
+});

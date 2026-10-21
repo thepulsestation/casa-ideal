@@ -4,6 +4,21 @@ export const SOURCES_REVIEWED_AT = '2026-10-18';
 
 export const SOURCES = [
   {
+    id:'santander-bonificaciones-2026',title:'Santander · Bonificaciones y umbrales de seguros',
+    url:'https://www.bancosantander.es/particulares/hipotecas/hipoteca-fija',
+    summary:'Revisión 21/10/2026: ingresos y pagos pueden bonificar 0,50 puntos. Hogar y protección de préstamos tienen umbrales anuales de prima y rebajas diferentes de otros seguros. Los umbrales no son presupuestos y no se usan como primas personales. La simulación aportada y la oferta escrita prevalecen sobre los tipos publicitarios.',
+  },
+  {
+    id:'santander-vida-2026',title:'Santander · Modalidades de seguro de vida hipotecario',
+    url:'https://www.bancosantander.es/particulares/seguros/vida/',
+    summary:'La modalidad periódica es anual renovable; la modalidad de prima única tiene un período inicial y posterior renovación. El precio requiere datos personales y del capital asegurado. Una póliza compartida no se cuenta dos veces para calcular la bonificación.',
+  },
+  {
+    id:'sabadell-proteccion-2026',title:'Sabadell · Protección de pagos de hipoteca',
+    url:'https://www.sabadellsegurosypensiones.com/es/particulares/proteccion-pagos/proteccion-pagos-hipotecas',
+    summary:'El producto hipotecario público admite modalidades periódicas. La calculadora mantiene la periodicidad de la oferta introducida: una prima única no es una regla universal ni equivale a un recibo mensual adicional.',
+  },
+  {
     id: 'aeat-iva-servicios',
     title: 'AEAT · IVA de servicios y presupuestos',
     url: 'https://www3.agenciatributaria.gob.es/Sede/iva/calculo-iva-repercutido-clientes/tipos-impositivos-iva.html',

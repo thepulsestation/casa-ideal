@@ -153,3 +153,11 @@ test('the monthly allocation route preserves private access and its selected hom
  const route=parseFamilyRoute(buildFamilyHash('reparto',CODE,'home-plan'));
  assert.equal(route.view,'reparto');assert.equal(route.inviteCode,CODE);assert.equal(route.scenarioId,'home-plan');
 });
+
+test('live presentation and bank comparison retain family access without requiring a property',()=>{
+ for(const view of ['presentacion','bancos']){
+  const route=parseFamilyRoute(buildFamilyHash(view,CODE));
+  assert.equal(route.view,view);assert.equal(route.inviteCode,CODE);
+  assert.equal(route.scenarioId,null);assert.equal(route.autoJoin,true);
+ }
+});
