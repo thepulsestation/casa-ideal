@@ -13,7 +13,7 @@ const products = () => [
 
 function fixture() {
   const settings = {
-    referenceMonth: '2026-10', purchaseMonth: '2027-06', cashSavings: 0, motherLoanCap: 21500, motherRate: 12, motherYears: 10,
+    revision:2, referenceMonth: '2026-10', purchaseMonth: '2027-06', cashSavings: 0, motherLoanCap: 21500, motherRate: 12, motherYears: 10,
     mortgageYears: 30, selectedBank: 'sabadell', financingMode: 'icf', bonusMode: 'full', conditional90Enabled: false,
     appraisalRatio: 1.125, testPrice: null,
     ownership: {ibiAnnual: 1500, wasteAnnual: null, communityMonthly: 0, maintenanceAnnual: null},
@@ -49,7 +49,7 @@ const tagFor = (html, path) => html.match(new RegExp(`<input[^>]*data-field="${p
 
 test('unknown insurance remains pending while a known-cost ceiling is explicitly conditional', () => {
   const html = renderMortgageSearch(fixture(), helpers);
-  assert.match(html, /Techo con costes conocidos/);
+  assert.match(html, /Precio máximo de la casa/);
   assert.match(html, /Coste completo pendiente/);
   assert.match(html, /faltan primas o presupuestos que pueden reducir este precio/);
   assert.match(html, /Gasto mensual con compra[\s\S]*?≥ EUR3824\.90/);
@@ -68,7 +68,7 @@ test('bank-specific pending quotes do not contaminate a completed selected bank'
   m.selected.monthly.insurance = 30;
   const html = renderMortgageSearch(m, helpers);
   const hero = html.split('<section class="ms-hero">')[1].split('</section>')[0];
-  assert.match(hero, /Simulación condicionada/);
+  assert.match(hero, /Con reservas estimadas/);
   assert.doesNotMatch(hero, /Coste completo pendiente|faltan primas|≥/);
   assert.doesNotMatch(html, /Presupuestos pendientes · 1/);
   assert.match(html, /Seguro de hogar santander|Primas pendientes/);
@@ -115,7 +115,7 @@ test('all adjustable fields follow homeSearch paths and nullable numeric inputs 
   assert.match(appraisal, /data-scale="100"/);
   assert.match(appraisal, /value="112.5"/);
   for (const bank of ['sabadell', 'santander']) {
-    for (const field of ['baseRate', 'payrollOnlyRate', 'fullRate', 'externalHomeInsuranceAnnual']) assert.match(tagFor(html, `homeSearch.offers.${bank}.${field}`), /data-nullable="true"/);
+    for (const field of ['baseRate', 'externalHomeInsuranceAnnual']) assert.match(tagFor(html, `homeSearch.offers.${bank}.${field}`), /data-nullable="true"/);
     for (let i = 0; i < 3; i++) {
       assert.match(tagFor(html, `homeSearch.offers.${bank}.products.${i}.cost`), /data-nullable="true"[^>]*value=""/);
       assert.ok(html.includes(`data-field="homeSearch.offers.${bank}.products.${i}.frequency"`));
@@ -181,7 +181,7 @@ test('missing payroll-only rate is not inferred from public discount points by t
   m.settings.offers.santander.payrollOnlyRate = null;
   m.scenarios.filter(item => item.bankId === 'santander').forEach(item => {item.bonuses.payrollRate = null; item.bonuses.interestSavingMonthly = null;});
   const html = renderMortgageSearch(m, helpers);
-  assert.match(tagFor(html, 'homeSearch.offers.santander.payrollOnlyRate'), /value=""/);
+  assert.equal(tagFor(html, 'homeSearch.offers.santander.payrollOnlyRate'), undefined);
   const bonus = html.split('<h3>Santander</h3>')[1].split('</article>')[0];
   assert.match(bonus, /Solo nómina<\/small><strong><span class="ms-pending">Pendiente/);
   assert.match(bonus, /EUR2\.95|2.95 %/);

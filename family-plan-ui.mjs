@@ -1,6 +1,6 @@
-import {buildSavingsProjection} from './savings-projection.mjs?v=34';
-import {renderSavingsChart} from './savings-chart-ui.mjs?v=34';
-import {renderPersonalCommitments} from './personal-commitments-ui.mjs?v=34';
+import {buildSavingsProjection} from './savings-projection.mjs?v=37';
+import {renderSavingsChart} from './savings-chart-ui.mjs?v=37';
+import {renderPersonalCommitments} from './personal-commitments-ui.mjs?v=37';
 
 const PERSON_IDS = ['buyer1', 'buyer2', 'mother', 'sister'];
 const PERSON_LABELS = {buyer1: 'Tú', buyer2: 'Tu hermano', mother: 'Tu madre', sister: 'Tu hermana'};

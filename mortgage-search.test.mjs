@@ -24,21 +24,23 @@ const fixture=()=>normalizeScenario({
     extraordinaryReceipt:{enabled:true,month:'2027-01',amount:1400,owner:'buyer1',confirmed:false},
   },
 });
-const withPrice=(source,raw={})=>calculateMortgageSearch(source,{testPrice:100000,...raw},options);
+const withPrice=(source,raw={})=>calculateMortgageSearch(source,{revision:2,testPrice:100000,...raw},options);
 const row=(model,id)=>model.scenarios.find(s=>s.id===id);
 const at=(model,id)=>model.atCommonPrice.find(s=>s.id===id);
 
 test('normalization starts from a generic zero-savings plan and inherits only Sabadell quotes once',()=>{
   const source=fixture(),before=structuredClone(source),s=normalizeMortgageSearch({},source);
   assert.equal(s.cashSavings,0);assert.equal(s.motherLoanCap,21500);assert.equal(s.motherYears,8);
-  assert.deepEqual(s.ownership,{ibiAnnual:1500,wasteAnnual:300,communityMonthly:100,maintenanceAnnual:0});
+  assert.deepEqual(s.ownership,{ibiAnnual:1500,wasteAnnual:300,communityMonthly:0,maintenanceAnnual:1200});
   assert.equal(s.offers.sabadell.products.find(p=>p.id==='home').cost,480);
   assert.ok(s.offers.sabadell.products.every(p=>p.enabled));
-  assert.ok(s.offers.santander.products.every(p=>p.cost===null));
+  assert.equal(s.offers.santander.products.find(p=>p.id==='home').cost,350);
+  assert.ok(s.offers.santander.products.every(p=>!p.quoteKnown));
+  assert.equal(s.bonusMode,'payroll');
   assert.equal(s.offers.santander.payrollOnlyRate,3.45);
   assert.equal(s.offers.santander.products.find(p=>p.id==='life').enabled,false);
   const initialized=normalizeMortgageSearch({offers:{sabadell:{products:null}}},source);
-  assert.equal(initialized.offers.sabadell.products.find(p=>p.id==='home').cost,null);
+  assert.equal(initialized.offers.sabadell.products.find(p=>p.id==='home').cost,300);
   assert.deepEqual(source,before);
   source.familyLoan.years=10;source.familyLoan.rate=null;
   assert.equal(normalizeMortgageSearch({},source).motherYears,8);
@@ -53,7 +55,7 @@ test('actual rental reference excludes future job, assumed cancellations, extras
   assert.equal(m.currentBudget.components.existingDebt,220);
   close(Object.values(m.currentBudget.components).reduce((s,v)=>s+v,0),m.currentBudget.totalMonthly);
   const june=at(m,'sabadell-icf');
-  assert.equal(june.result.budget.existingDebtMonthly,120);
+  assert.equal(june.result.budget.existingDebtMonthly,220);
   assert.equal(june.comparisonPeople.find(p=>p.id==='sister').purchaseIncome,500);
   assert.equal(june.comparisonPeople.find(p=>p.id==='sister').currentIncome,0);
   assert.ok(june.notes.some(n=>n.includes('cancelaciones')));
@@ -88,7 +90,8 @@ test('Santander ICF leaves five percent of price, standard leaves twenty, with t
 });
 
 test('unknown premiums and alternate home cost remain null, with no invented net advantage',()=>{
-  const m=withPrice(fixture()),s=at(m,'sabadell-icf'),t=at(m,'santander-icf');
+  const raw={bonusMode:'full',offers:Object.fromEntries(['sabadell','santander'].map(id=>[id,{externalHomeInsuranceAnnual:null,products:['life','home','protection'].map(id=>({id,cost:null,quoteKnown:false}))}]))};
+  const m=withPrice(fixture(),raw),s=at(m,'sabadell-icf'),t=at(m,'santander-icf');
   assert.equal(s.monthly.insurance,null);assert.equal(s.bonuses.productMonthly,null);assert.equal(s.bonuses.netSavingMonthly,null);
   assert.equal(t.monthly.insurance,null);assert.equal(t.bonuses.fullRate,2.95);
   assert.ok(t.missingQuotes.includes('Protección de pagos'));
@@ -100,7 +103,7 @@ test('unknown premiums and alternate home cost remain null, with no invented net
 });
 
 test('Santander screenshot thresholds are strict, annualized, capped and count one shared policy',()=>{
-  const raw={offers:{santander:{externalHomeInsuranceAnnual:240,products:[
+  const raw={bonusMode:'full',offers:{santander:{externalHomeInsuranceAnnual:240,products:[
     {id:'life',enabled:true,cost:201,frequency:'annual',quoteKnown:true},
     {id:'home',cost:25,frequency:'monthly',quoteKnown:true}, //300/year, not greater
     {id:'protection',cost:75.25,frequency:'quarterly',quoteKnown:true}, //301/year
@@ -116,7 +119,7 @@ test('Santander screenshot thresholds are strict, annualized, capped and count o
 });
 
 test('full versus payroll compares identical capital and includes real insurance costs and alternate quote',()=>{
-  const raw={offers:{sabadell:{externalHomeInsuranceAnnual:240,products:[
+  const raw={bonusMode:'full',offers:{sabadell:{externalHomeInsuranceAnnual:240,products:[
     {id:'life',cost:240,frequency:'annual',quoteKnown:true},
     {id:'home',cost:360,frequency:'annual',quoteKnown:true},
     {id:'protection',cost:1200,frequency:'upfront',coverageYears:5,quoteKnown:true},
@@ -126,9 +129,9 @@ test('full versus payroll compares identical capital and includes real insurance
   close(s.bonuses.productEquivalentMonthly,70);
   close(s.bonuses.netSavingMonthly,s.bonuses.interestSavingMonthly-50);
   const payroll=at(withPrice(fixture(),{...raw,bonusMode:'payroll'}),'sabadell-icf');
-  close(payroll.mortgagePrincipal,s.mortgagePrincipal);close(payroll.result.mortgage.rate,3.30);
+  close(payroll.mortgagePrincipal,s.mortgagePrincipal);close(payroll.result.mortgage.rate,3.35);
   close(payroll.monthly.insurance,20);assert.equal(payroll.result.cash.upfrontInsurance,0);
-  //Sabadell0.60pp is one block; no guessed points for individual products.
+  // Product points are aggregated once for finance; premiums do not add points again.
   assert.ok(s.scenario.mortgage.discounts.filter(p=>['life','home','protection'].includes(p.id)).every(p=>p.points===0));
 });
 
@@ -172,4 +175,54 @@ test('invalid input and missing borrower income produce explicit errors instead 
   assert.ok(calculateMortgageSearch(fixture(),{}, {...options,step:0}).errors.length);
   const noIncome=fixture();noIncome.budget.incomes=[];
   assert.ok(calculateMortgageSearch(noIncome,{},options).errors.length);
+});
+
+test('old full-bonus template migrates once, preserving confirmed quotes and later explicit choices',()=>{
+  const old={bonusMode:'full',ownership:{communityMonthly:100,maintenanceAnnual:0},offers:{sabadell:{baseRate:3.75,payrollOnlyRate:3.3,fullRate:2.7,externalHomeInsuranceAnnual:null,products:[{id:'life',cost:480,quoteKnown:true,frequency:'annual'},{id:'home',cost:null,quoteKnown:false}]}}};
+  const s=normalizeMortgageSearch(old,fixture());
+  assert.equal(s.revision,2);assert.equal(s.bonusMode,'payroll');
+  assert.equal(s.offers.sabadell.payrollOnlyRate,3.35);assert.equal(s.offers.sabadell.fullRate,2.75);
+  assert.equal(s.offers.sabadell.products[0].cost,480);assert.ok(s.offers.sabadell.products[0].quoteKnown);
+  assert.equal(s.offers.sabadell.externalHomeInsuranceAnnual,300);
+  const next=normalizeMortgageSearch({...s,bonusMode:'full',ownership:{...s.ownership,communityMonthly:75}});
+  assert.equal(next.bonusMode,'full');assert.equal(next.ownership.communityMonthly,75);
+});
+
+test('payroll baseline includes house insurance reserve and freezes all current living costs',()=>{
+  const source=fixture();source.familyPlan.university.endMonth='2026-12';
+  source.familyPlan.personalDebtEndMonth='2027-01';source.budget.currentOtherMonthly=55;
+  source.budget.sharedLivingCosts=false;source.budget.currentUtilitiesMonthly=280;source.budget.utilitiesMonthly=1000;
+  const m=withPrice(source,{livingIncreaseMonthly:40});
+  for(const id of ['sabadell-icf','santander-icf']){
+    const s=at(m,id);assert.equal(s.scenario.propertyType,'house');
+    close(s.monthly.insurance,25);assert.ok(s.estimatedCosts);assert.deepEqual(s.unpricedCosts,[]);
+    close(s.monthly.living,m.currentBudget.totalMonthly-m.currentBudget.components.rent+40);
+    close(s.comparisonPeople.reduce((sum,p)=>sum+p.purchaseCost,0),s.monthly.total);
+    close(s.monthly.total,s.monthly.living+s.monthly.mortgage+s.monthly.motherBank+s.monthly.ownership+s.monthly.insurance);
+  }
+  close(at(m,'sabadell-icf').result.mortgage.rate,3.35);close(at(m,'santander-icf').result.mortgage.rate,3.45);
+});
+
+test('estimated products yield a labelled net comparison while unknown amounts stay unknown',()=>{
+  const m=withPrice(fixture()),s=at(m,'santander-icf');
+  assert.ok(s.bonuses.estimated);close(s.bonuses.productEquivalentMonthly,700/12);
+  close(s.bonuses.netSavingMonthly,s.bonuses.interestSavingMonthly-(700-300)/12);
+  assert.equal(s.result.cash.upfrontInsurance,0);
+  const unknown=at(withPrice(fixture(),{offers:{santander:{externalHomeInsuranceAnnual:null}}}),'santander-icf');
+  assert.equal(unknown.monthly.insurance,null);assert.equal(unknown.bonuses.netSavingMonthly,null);
+});
+
+test('independent monthly ceiling and cash ceiling do not confuse house price with mortgage',()=>{
+  const source=fixture();source.budget.currentRent=1800;
+  const m=calculateMortgageSearch(source,{},options),s=row(m,'santander-icf');
+  assert.ok(s.ceilings.monthlyPrice>s.maxPriceKnownCosts);
+  assert.ok(s.ceilings.monthlyFundingGap>0);
+  close(s.mortgagePrincipal,s.maxPriceKnownCosts*.75);
+  close(s.ceilings.monthlyMortgage,s.ceilings.monthlyPrice*.75);
+  const next=at(withPrice(source,{testPrice:s.ceilings.monthlyPrice+500}),s.id);
+  assert.equal(next.limits.spending.fits,false);
+  assert.equal(s.priceLadder.length,4);
+  assert.ok(Math.abs(s.priceLadder[1].mortgagePrincipal-s.priceLadder[0].mortgagePrincipal-5000)<1);
+  const richer=structuredClone(source);richer.budget.incomes[0].monthly+=2000;
+  close(row(calculateMortgageSearch(richer,{},options),s.id).ceilings.monthlyPrice,s.ceilings.monthlyPrice);
 });

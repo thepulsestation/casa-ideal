@@ -1,6 +1,7 @@
-import {normalizeScenario, calculateScenario, monthlyPayment} from './finance.mjs?v=34';
-import {calculateMonthlyCostComparison} from './budget-neutral.mjs?v=34';
-import {calculateFamilyTimeline, normalizeFamilyPlan} from './family-plan.mjs?v=34';
+import {normalizeScenario, calculateScenario, monthlyPayment} from './finance.mjs?v=37';
+import {calculateMonthlyCostComparison} from './budget-neutral.mjs?v=37';
+import {calculateFamilyTimeline, normalizeFamilyPlan} from './family-plan.mjs?v=37';
+import {calculatePersonalCommitments} from './personal-commitments.mjs?v=37';
 
 // Generic market search: the reference is today's rental budget, never a saved
 // property's price, valuations, local bills, down payment or manual loan amount.
@@ -19,6 +20,22 @@ const madridMonth = () => new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Madr
 const money = value => Math.round((Number(value)+Number.EPSILON)*100)/100;
 const unique = values => [...new Set(values.filter(Boolean))];
 
+// Versioned assumptions, not a rewrite of household data or saved properties.
+// Confirmed quotes survive; the old empty/full-bonus template is upgraded once.
+function migrateSearch(input) {
+  const raw=copy(input);
+  if(raw.revision>=2)return raw;
+  if(Object.hasOwn(raw,'bonusMode'))raw.bonusMode='payroll';
+  if(raw.ownership?.communityMonthly===100&&raw.ownership?.maintenanceAnnual===0)
+    raw.ownership={...raw.ownership,communityMonthly:0,maintenanceAnnual:1200};
+  for(const [id,offer] of Object.entries(raw.offers||{})) {
+    if(id==='sabadell'&&offer.baseRate===3.75&&offer.fullRate===2.70){offer.payrollOnlyRate=3.35;offer.fullRate=2.75;}
+    if(offer.externalHomeInsuranceAnnual===null)delete offer.externalHomeInsuranceAnnual;
+    for(const p of offer.products||[])if(p.cost===null&&!p.quoteKnown){delete p.cost;delete p.frequency;}
+  }
+  return raw;
+}
+
 function normalizedNumber(value,fallback,label,errors,{min=0,max=Infinity,nullable=false}={}) {
   if(value === undefined)return fallback;
   if(nullable && (value === null || value === ''))return null;
@@ -34,11 +51,12 @@ function normalizeProducts(bankId,rawProducts,initialProducts,errors) {
   const rows=Array.isArray(rawProducts)?rawProducts:[];
   return PRODUCT_IDS.map(id=>{
     const row=rows.find(p=>p?.id===id)||{}, inherited=initialProducts?.find(p=>p?.id===id)||{};
-    const base={id,label:PRODUCT_NAMES[id],enabled:bankId==='sabadell'||id!=='life',cost:null,
-      frequency:bankId==='sabadell'&&id==='protection'?'upfront':'annual',quoteKnown:false,coverageYears:5,
-      points:bankId==='santander'?{life:.1,home:.2,protection:.3}[id]:null,
+    const base={id,label:PRODUCT_NAMES[id],enabled:bankId==='sabadell'||id!=='life',
+      cost:bankId==='sabadell'?{life:253.52,home:300,protection:340}[id]:{life:null,home:350,protection:350}[id],
+      frequency:'annual',quoteKnown:false,coverageYears:1,
+      points:bankId==='santander'?{life:.1,home:.2,protection:.3}[id]:{life:.4,home:.1,protection:.1}[id],
       annualThreshold:bankId==='santander'?(id==='life'?200:300):null};
-    const inheritedQuote=Object.fromEntries(['label','cost','frequency','quoteKnown','coverageYears'].filter(key=>Object.hasOwn(inherited,key)).map(key=>[key,inherited[key]]));
+    const inheritedQuote=inherited.quoteKnown&&inherited.cost!==null?Object.fromEntries(['label','cost','frequency','quoteKnown','coverageYears'].filter(key=>Object.hasOwn(inherited,key)).map(key=>[key,inherited[key]])):{};
     const product={...base,...inheritedQuote,...row,id};
     product.label=typeof product.label==='string'?product.label:base.label;
     product.enabled=typeof product.enabled==='boolean'?product.enabled:base.enabled;
@@ -49,7 +67,7 @@ function normalizeProducts(bankId,rawProducts,initialProducts,errors) {
     if(bankId==='santander'){
       // The screenshot fixes points/thresholds; thresholds are never premium quotes.
       product.points=base.points;product.annualThreshold=base.annualThreshold;
-    } else {product.points=null;product.annualThreshold=null;}
+    } else {product.points=base.points;product.annualThreshold=null;}
     return product;
   });
 }
@@ -58,10 +76,12 @@ function normalizeProducts(bankId,rawProducts,initialProducts,errors) {
 export function normalizeMortgageSearch(raw={},source={}) {
   const errors=[];
   if(!record(raw)){errors.push('La búsqueda hipotecaria debe ser un objeto.');raw={};}
+  raw=migrateSearch(raw);
   if(!record(source))source={};
   const ownership=record(raw.ownership)?raw.ownership:{},purchase=record(raw.purchase)?raw.purchase:{};
   const inheritedRate=numeric(source.familyLoan?.rate)&&Number(source.familyLoan.rate)>=0&&Number(source.familyLoan.rate)<=100?Number(source.familyLoan.rate):6.99;
   const settings={
+    revision:2,
     referenceMonth:raw.referenceMonth??madridMonth(),
     purchaseMonth:raw.purchaseMonth??source.familyPlan?.purchaseMonth??madridMonth(),
     cashSavings:normalizedNumber(raw.cashSavings,0,'Ahorro de compra',errors),
@@ -69,26 +89,31 @@ export function normalizeMortgageSearch(raw={},source={}) {
     motherRate:normalizedNumber(raw.motherRate,inheritedRate,'TIN de mamá',errors,{max:100}),
     motherYears:normalizedNumber(raw.motherYears,sourceMotherYears(source),'Plazo de mamá',errors,{min:1/12,max:40}),
     ownership:{},purchase:{},offers:{},
-    selectedBank:raw.selectedBank??'sabadell',financingMode:raw.financingMode??'icf',bonusMode:raw.bonusMode??'full',
+    selectedBank:raw.selectedBank??'sabadell',financingMode:raw.financingMode??'icf',bonusMode:raw.bonusMode??'payroll',
+    livingIncreaseMonthly:normalizedNumber(raw.livingIncreaseMonthly,0,'Reserva por aumento de vida y suministros',errors),
     conditional90Enabled:raw.conditional90Enabled===true,
     appraisalRatio:normalizedNumber(raw.appraisalRatio,1.125,'Relación de tasación',errors,{min:1,max:5}),
     testPrice:normalizedNumber(raw.testPrice,null,'Precio de comparación',errors,{min:1,nullable:true}),
   };
-  for(const [key,fallback] of Object.entries({ibiAnnual:1500,wasteAnnual:300,communityMonthly:100,maintenanceAnnual:0}))
+  for(const [key,fallback] of Object.entries({ibiAnnual:1500,wasteAnnual:300,communityMonthly:0,maintenanceAnnual:1200}))
     settings.ownership[key]=normalizedNumber(ownership[key],fallback,key,errors);
   for(const [key,fallback] of Object.entries({provisionPercent:2,moving:600,buffer:3000,depositPercent:.1}))
     settings.purchase[key]=normalizedNumber(purchase[key],fallback,key,errors,{max:key==='depositPercent'?1:key==='provisionPercent'?100:Infinity});
   for(const bank of BANKS){
     const offered=record(raw.offers?.[bank.id])?raw.offers[bank.id]:{};
     const initial=!Object.hasOwn(raw.offers||{},bank.id);
-    const defaults=bank.id==='sabadell'?{baseRate:3.75,payrollOnlyRate:3.30,fullRate:2.70,insuranceDiscountPoints:.60}
+    const defaults=bank.id==='sabadell'?{baseRate:3.75,payrollOnlyRate:3.35,fullRate:2.75,insuranceDiscountPoints:.60}
       :{baseRate:3.95,payrollOnlyRate:3.45,fullRate:2.95,insuranceDiscountPoints:.50};
     const offer={};
     for(const [key,fallback] of Object.entries(defaults))offer[key]=normalizedNumber(offered[key],fallback,`${bank.name}: ${key}`,errors,{max:30,nullable:key==='payrollOnlyRate'});
+    offer.payrollDiscountPoints=bank.id==='sabadell'?.4:.5;
+    offer.payrollOnlyRate=money(offer.baseRate-offer.payrollDiscountPoints);
+    offer.fullRate=money(offer.baseRate-1);
     offer.products=normalizeProducts(bank.id,offered.products,initial&&bank.id==='sabadell'?source.mortgage?.discounts:null,errors);
     offer.externalHomeInsuranceAnnual=normalizedNumber(offered.externalHomeInsuranceAnnual,
-      initial&&bank.id==='sabadell'&&numeric(source.budget?.externalHomeInsuranceAnnual)?Number(source.budget.externalHomeInsuranceAnnual):null,
+      300,
       `${bank.name}: seguro de hogar alternativo`,errors,{nullable:true});
+    offer.externalHomeQuoteKnown=offered.externalHomeQuoteKnown===true;
     offer.source=bank.id==='santander'?'photo-2026-10-21':'family-reported';
     offer.discountStartsMonth=bank.id==='santander'?7:1;
     if(offer.fullRate>offer.baseRate || offer.payrollOnlyRate!==null&&(offer.payrollOnlyRate>offer.baseRate||offer.payrollOnlyRate<offer.fullRate))
@@ -121,13 +146,11 @@ function offerTerms(bankId,offer,bonusMode) {
   let insurancePoints=0;
   if(bonusMode==='full'){
     if(bankId==='sabadell'){
-      const complete=PRODUCT_IDS.every(id=>chosen.some(p=>p.id===id));
-      insurancePoints=complete?offer.insuranceDiscountPoints:0;
-      if(!complete)notes.push('Sabadell: sin las tres pólizas no se atribuye un reparto de los0,60puntos que no está desglosado.'.replace('los0,60','los 0,60 '));
+      insurancePoints=chosen.reduce((sum,p)=>sum+p.points,0);
     } else {
       for(const product of chosen){
         const amount=insuranceAmounts(product);
-        const known=product.quoteKnown&&amount.annual!==null;
+        const known=amount.annual!==null;
         if(!known){insurancePoints+=product.points;notes.push(`${product.label}: bonificación condicionada a superar ${product.annualThreshold}€/año; ese umbral no es una prima cotizada.`);}
         else if(amount.annual>product.annualThreshold)insurancePoints+=product.points;
         else notes.push(`${product.label}: la prima anual no supera ${product.annualThreshold}€ y no recibe su bonificación.`);
@@ -139,21 +162,44 @@ function offerTerms(bankId,offer,bonusMode) {
   const products=bonusMode==='full'?chosen:[];
   for(const p of products)if(p.cost===null||!p.quoteKnown)missing.push(p.label);
   const hasHome=products.some(p=>p.id==='home');
-  if(!hasHome&&offer.externalHomeInsuranceAnnual===null)missing.push('Seguro de hogar alternativo');
+  if(!hasHome&&(offer.externalHomeInsuranceAnnual===null||!offer.externalHomeQuoteKnown))missing.push('Seguro de hogar alternativo');
+  const unpriced=products.filter(p=>p.cost===null).map(p=>p.label);
+  if(!hasHome&&offer.externalHomeInsuranceAnnual===null)unpriced.push('Seguro de hogar alternativo');
   const rate=Math.max(0,payrollRate-insurancePoints);
   const payrollPoints=Math.max(0,offer.baseRate-payrollRate);
   const discounts=[{id:'payroll',label:'Nómina',enabled:true,points:payrollPoints,cost:0,frequency:'monthly',quoteKnown:true},
     {id:'insurance-bundle',label:'Bonificación agregada de seguros',enabled:insurancePoints>0,points:insurancePoints,cost:0,frequency:'monthly',quoteKnown:true},
     ...products.map(p=>({...p,points:0,enabled:true}))];
-  return {rate,payrollRate:offer.payrollOnlyRate,products,discounts,missingQuotes:unique(missing),notes,
+  return {rate,payrollRate:offer.payrollOnlyRate,products,discounts,missingQuotes:unique(missing),unpricedCosts:unpriced,notes,
     recurringKnown:products.reduce((sum,p)=>sum+(insuranceAmounts(p).recurring??0),0)+(hasHome?0:offer.externalHomeInsuranceAnnual===null?0:offer.externalHomeInsuranceAnnual/12),
     equivalentKnown:products.reduce((sum,p)=>sum+(insuranceAmounts(p).equivalent??0),0),
     upfrontEquivalentKnown:products.filter(p=>p.frequency==='upfront').reduce((sum,p)=>sum+(insuranceAmounts(p).equivalent??0),0)};
 }
 
-function genericScenario(source,settings,bankId,mode,bonusMode=settings.bonusMode) {
+export function genericScenario(source,settings,bankId,mode,bonusMode=settings.bonusMode,freezeLiving=true) {
   const sourceScenario=normalizeScenario(copy(source)),offer=settings.offers[bankId],terms=offerTerms(bankId,offer,bonusMode);
   const plan=normalizeFamilyPlan(sourceScenario.familyPlan??{});
+  if(freezeLiving){
+    // Keep current living expenses as the conservative baseline, including
+    // debts/tuition that might disappear later. Future income does not enlarge it.
+    plan.extraordinaryReceipt.enabled=plan.extraordinaryReceipt.enabled&&plan.extraordinaryReceipt.confirmed
+      &&plan.extraordinaryReceipt.month<=settings.referenceMonth;
+    const active=calculatePersonalCommitments(plan,{asOfMonth:settings.referenceMonth});
+    if(active.valid)plan.personalCommitments=Object.values(active.activeByOwner).flat().map(p=>({...p,startMonth:null,endMonth:null,settleWithReceipt:false}));
+    plan.extraordinaryReceipt.enabled=false;
+    if(plan.personalDebtEndMonth&&plan.personalDebtEndMonth<settings.referenceMonth)sourceScenario.budget.existingDebtMonthly=0;
+    plan.personalDebtEndMonth=null;plan.usePurchaseDebtDate=false;
+    const universityActive=(!plan.university.startMonth||plan.university.startMonth<=settings.referenceMonth)
+      &&plan.university.endMonth&&plan.university.endMonth>=settings.referenceMonth;
+    if(!universityActive)plan.university.amount=0;
+    else {plan.university.startMonth=null;plan.university.endMonth=settings.purchaseMonth;}
+    const b=sourceScenario.budget;
+    const mode=b.sharedLivingCosts?b.utilitiesMode:b.currentUtilitiesMode;
+    const values=b.sharedLivingCosts?b.utilityBreakdown:b.currentUtilityBreakdown;
+    const utilities=mode==='detailed'?Object.values(values).reduce((a,v)=>a+Number(v||0),0):Number(b.sharedLivingCosts?b.utilitiesMonthly:b.currentUtilitiesMonthly);
+    b.utilitiesMode='aggregate';b.utilitiesMonthly=utilities;b.sharedLivingCosts=true;
+    b.otherMonthly+=Number(b.currentOtherMonthly||0)+settings.livingIncreaseMonthly;b.currentOtherMonthly=0;
+  }
   plan.purchaseMonth=settings.purchaseMonth;plan.sisterSupport.savingsAtPurchase=0;
   const wait=sourceScenario.cash.preClosingLoanPayments;
   const loanStart=monthOK(plan.motherLoanStartMonth)?plan.motherLoanStartMonth:monthString(monthIndex(settings.purchaseMonth)-wait);
@@ -161,7 +207,7 @@ function genericScenario(source,settings,bankId,mode,bonusMode=settings.bonusMod
   const shares=sourceScenario.tax.buyers.map(b=>({share:b.share}));
   const transfer=copy(sourceScenario.motherTransfer);
   if(transfer.mode==='family-loan'&&transfer.repaymentMode==='custom'&&transfer.familyYears===null)transfer.familyYears=settings.motherYears;
-  const scenario=normalizeScenario({purchasePrice:1,propertyType:'flat',appraisalValue:null,referenceValue:null,declaredValue:null,
+  const scenario=normalizeScenario({purchasePrice:1,propertyType:'house',appraisalValue:null,referenceValue:null,declaredValue:null,
     searchAppraisalRatio:mode==='conditional90'?settings.appraisalRatio:1,
     tax:{mode:'used',buyers:copy(sourceScenario.tax.buyers)},
     mortgage:{ltv:mode==='conditional90'?.9:bankId==='santander'&&mode==='icf'?.75:.8,years:30,
@@ -180,8 +226,8 @@ function genericScenario(source,settings,bankId,mode,bonusMode=settings.bonusMod
   return {scenario,terms};
 }
 
-function currentRentalBudget(source,settings) {
-  const {scenario}=genericScenario(source,settings,'sabadell','standard','payroll');
+export function currentRentalBudget(source,settings) {
+  const {scenario}=genericScenario(source,settings,'sabadell','standard','payroll',false);
   scenario.familyLoan.enabled=false;scenario.icf.enabled=false;scenario.mortgage.amount=0;
   scenario.cash.preClosingLoanPayments=0;scenario.familyPlan.usePurchaseDebtDate=false;
   scenario.familyPlan.sisterJob.enabled=false;
@@ -207,7 +253,7 @@ function currentRentalBudget(source,settings) {
 
 function bonusComparison(bankId,offer,principal) {
   const full=offerTerms(bankId,offer,'full'),payroll=offerTerms(bankId,offer,'payroll');
-  const knownFull=full.products.every(p=>p.cost!==null&&p.quoteKnown),hasBankHome=full.products.some(p=>p.id==='home');
+  const knownFull=full.products.every(p=>p.cost!==null),hasBankHome=full.products.some(p=>p.id==='home');
   const knownBaseline=offer.externalHomeInsuranceAnnual!==null;
   const saving=offer.payrollOnlyRate===null?null:monthlyPayment(principal,offer.payrollOnlyRate,30)-monthlyPayment(principal,full.rate,30);
   const incremental=knownFull&&knownBaseline?full.equivalentKnown+(hasBankHome?0:offer.externalHomeInsuranceAnnual/12)-offer.externalHomeInsuranceAnnual/12:null;
@@ -215,6 +261,7 @@ function bonusComparison(bankId,offer,principal) {
     productMonthly:knownFull?money(full.recurringKnown):null,productEquivalentMonthly:knownFull?money(full.equivalentKnown):null,
     baselineHomeMonthly:knownBaseline?money(offer.externalHomeInsuranceAnnual/12):null,
     netSavingMonthly:saving===null||incremental===null?null:money(saving-incremental),
+    estimated:full.missingQuotes.length>0||payroll.missingQuotes.length>0,
     missingQuotes:unique([...full.missingQuotes,...payroll.missingQuotes]),notes:full.notes};
 }
 
@@ -252,7 +299,7 @@ function rowFromEvaluation(bank,mode,e,currentBudget,settings,available=true) {
     comparisonPeople:[],bonuses:null,result:null,scenario:e?.candidate??null,notes:[],errors:e?.errors??[]};
   if(!valid)return base;
   const ownership=money((settings.ownership.ibiAnnual+settings.ownership.wasteAnnual+settings.ownership.maintenanceAnnual)/12+settings.ownership.communityMonthly);
-  const insuranceKnown=e.terms.missingQuotes.length===0;
+  const insuranceKnown=e.terms.unpricedCosts.length===0;
   const living=money(c.purchaseTotal-r.mortgage.monthlyPayment-r.familyLoan.monthlyPayment-ownership-r.budget.insuranceMonthly);
   const maximumMortgage=currentBudget.totalMonthly-living-ownership-r.budget.insuranceMonthly-r.familyLoan.monthlyPayment;
   const loanStart=e.candidate.familyPlan.motherLoanStartMonth;
@@ -279,10 +326,12 @@ function rowFromEvaluation(bank,mode,e,currentBudget,settings,available=true) {
       insurance:insuranceKnown?money(r.budget.insuranceMonthly):null,
       insuranceEquivalent:insuranceKnown?money(r.budget.upfrontInsuranceMonthlyEquivalent):null,living,total:c.purchaseTotal,
       knownInsurance:money(r.budget.insuranceMonthly)},limits,
-    missingQuotes:unique([...e.terms.missingQuotes,...r.budget.missingQuotes]),incomplete:true,
+    missingQuotes:unique([...e.terms.missingQuotes,...r.budget.missingQuotes]),unpricedCosts:e.terms.unpricedCosts,
+    estimatedCosts:e.terms.missingQuotes.length>0,incomplete:true,
     comparisonPeople:comparePeople(c,currentBudget),bonuses:bonusComparison(bank.id,settings.offers[bank.id],r.mortgage.principal),
     result:r,scenario:e.candidate,notes:unique([
-      ...e.terms.notes,'Las provisiones de IBI, residuos, comunidad y mantenimiento no son facturas confirmadas.',
+      ...e.terms.notes,'Se mantiene el gasto de vida actual, sin adelantar bajadas por fin de universidad o cancelaciones previstas. Los mayores ingresos no elevan el límite de gasto.',
+      'IBI, residuos, mantenimiento y seguros estimados son reservas editables, no facturas confirmadas.',
       'El tope de gasto se comprueba en el mes de compra; los meses previos se muestran aparte.',
       ...(preclosing.spendingAboveCurrentCap?[`Antes de firmar, alquiler más préstamo alcanza ${money(transitionExpenses)}€/mes, por encima del presupuesto actual aunque pueda cubrirse con ingresos.`]:[]),
       'El capital inicial procedente de mamá es prestado: la entidad debe aceptar su origen y valorar todas las cuotas.',
@@ -320,10 +369,24 @@ export function calculateMortgageSearch(source,raw={},options={}) {
       return cache.get(price);
     };
     calculators.set(`${bank.id}-${mode}`,evaluate);
-    let low=1,high=Math.floor(ceiling/step),best=0;
-    while(low<=high){const mid=Math.floor((low+high)/2),e=evaluate(mid*step);if(e.allFits){best=mid;low=mid+1;}else high=mid-1;}
+    const search=fits=>{
+      let low=1,high=Math.floor(ceiling/step),best=0;
+      while(low<=high){const mid=Math.floor((low+high)/2),e=evaluate(mid*step);if(!e.errors.length&&fits(e)){best=mid;low=mid+1;}else high=mid-1;}
+      return best;
+    };
+    const best=search(e=>e.allFits),monthlyBest=search(e=>e.spendingFits),monthlyAt=monthlyBest?evaluate(monthlyBest*step):null;
     const at=best?evaluate(best*step):evaluate(step),row=rowFromEvaluation(bank,mode,at,currentBudget,settings);
     row.maxPriceKnownCosts=best*step;
+    row.ceilings={monthlyPrice:monthlyBest*step,monthlyMortgage:monthlyAt?.result.mortgage.principal??null,
+      monthlyMortgagePayment:monthlyAt?.result.mortgage.monthlyPayment??null,monthlyTotal:monthlyAt?.comparison.purchaseTotal??null,
+      monthlyFundingGap:monthlyAt?.result.cash.fundingGap??null,cashPrice:search(e=>e.finalCashFits)*step,
+      earlyCashPrice:search(e=>e.earlyCashFits)*step,debtPrice:search(e=>e.debtFits)*step};
+    row.priceLadder=best?Array.from({length:4},(_,i)=>{
+      const price=Math.round(best*step+i*5000/scenario.mortgage.ltv),e=evaluate(price);
+      return {purchasePrice:price,mortgagePrincipal:e.result.mortgage.principal,total:e.comparison?.purchaseTotal??null,
+        extraMonthly:e.comparison?money(e.comparison.purchaseTotal-currentBudget.totalMonthly):null,
+        fundingGap:e.result.cash.fundingGap,earlyCashGap:e.result.cash.beforeMortgageGap};
+    }):[];
     if(!best){row.notes.push('Ningún precio positivo del intervalo cumple simultáneamente presupuesto, deuda y efectivo.');
       row.result=null;row.scenario=null;row.bonuses=null;row.mortgagePrincipal=null;row.icfPrincipal=null;row.ownPriceContribution=null;row.motherLoanRequired=null;
       row.monthly=Object.fromEntries(Object.keys(row.monthly).map(key=>[key,null]));}

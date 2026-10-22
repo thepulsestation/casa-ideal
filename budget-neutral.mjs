@@ -1,7 +1,7 @@
-import {calculateScenario, normalizeScenario} from './finance.mjs?v=34';
-import {calculateFamilyTimeline, normalizeFamilyPlan} from './family-plan.mjs?v=34';
-import {calculatePersonalCommitments} from './personal-commitments.mjs?v=34';
-import {calculatePurchaseCapacity} from './purchase-capacity.mjs?v=34';
+import {calculateScenario, normalizeScenario} from './finance.mjs?v=37';
+import {calculateFamilyTimeline, normalizeFamilyPlan} from './family-plan.mjs?v=37';
+import {calculatePersonalCommitments} from './personal-commitments.mjs?v=37';
+import {calculatePurchaseCapacity} from './purchase-capacity.mjs?v=37';
 
 const ROLES = ['buyer1', 'buyer2', 'mother', 'sister'];
 const labels = ['Tú', 'Tu hermano', 'Tu madre', 'Tu hermana'];

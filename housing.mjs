@@ -1,5 +1,6 @@
-import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=34';
-import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=34';
+import {getPropertyCostProvision} from './property-costs.mjs?v=37';
+import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=37';
+import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=37';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
@@ -151,7 +152,8 @@ export function createHousingScenario(current = {}, rawDetails = {}) {
   const source = normalizeScenario(structuredClone(current));
   if (source._structureErrors?.length) throw new Error('Revisa la estructura del presupuesto familiar antes de añadir otra vivienda.');
   const fresh = normalizeScenario();
-  fresh.budget = { ...structuredClone(source.budget), ...PROPERTY_BUDGET_DEFAULTS };
+  fresh.budget = { ...structuredClone(source.budget), ...PROPERTY_BUDGET_DEFAULTS, ownershipProvisionFromRules:false, ownershipProvisionCombined:false };
+  if(source.purchaseStory){fresh.purchaseStory=structuredClone(source.purchaseStory);Object.assign(fresh.budget,getPropertyCostProvision({...source,budget:{communityMonthly:0}}),{propertyCostsEstimated:true});}
   fresh.mortgage = structuredClone(source.mortgage);
   fresh.mortgage.amount = null;
   fresh.mortgage.ltv = 0.8;

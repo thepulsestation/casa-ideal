@@ -9,3 +9,9 @@
 main:has(.family-story) .heading-actions{display:none}
 @media(min-width:800px){.app-shell #view:fullscreen .story-bars:has(li:nth-child(7)){grid-template-columns:repeat(2,minmax(0,1fr));column-gap:38px}}
 @media(max-width:650px){main:has(.family-story) .page-heading{margin-bottom:18px}main:has(.family-story) .page-heading .eyebrow{display:none}main:has(.family-story) .page-heading h1{font-size:24px}.family-story .story-controls{position:sticky;bottom:10px;z-index:2;padding:10px;background:#edf1e9f5;border:1px solid var(--story-line);border-radius:12px;box-shadow:0 4px 20px #173d3512}.app-shell #view:fullscreen{padding:12px}.app-shell #view:fullscreen .story-slide{min-height:0;height:auto}.app-shell #view:fullscreen .story-slide>header{padding:22px 20px 0}.app-shell #view:fullscreen .story-content{padding:22px 20px}}
+.story-bank-limits{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.4rem}.story-bank-limits>section{padding:1.1rem;border:1px solid var(--line,#d6ded5);border-radius:1.2rem;background:#f7f7ef}.story-bank-limits .story-metric{margin-top:.6rem;padding:.65rem}.story-bank-limits .story-metric strong{font-size:clamp(1.35rem,3vw,2.6rem)}
+@media(max-width:600px){.story-bank-limits{grid-template-columns:1fr;gap:.7rem}.story-bank-limits>section{padding:.8rem}.story-bank-limits .story-metric strong{font-size:1.5rem}}
+
+/* Keep the slide title and takeaway visible in short fullscreen windows. */
+:fullscreen .family-story .story-content{min-height:0;overflow:auto;align-content:start;grid-auto-rows:max-content}
+:fullscreen .family-story .story-slide>header,:fullscreen .family-story .story-slide>footer{flex-shrink:0}

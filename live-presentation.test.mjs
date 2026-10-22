@@ -80,15 +80,15 @@ test('real mortgage search feeds the live narrative without depending on a prese
  const model=calculateMortgageSearch(source,settings,options),slides=buildLiveSlides({...model,source});
  assert.deepEqual(model.errors,[]);assert.ok(model.selected);assert.equal(slides.length,16);
  assert.ok(slides.find(s=>s.id==='precio-maximo').notes.includes(new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR',maximumFractionDigits:0,minimumFractionDigits:0}).format(model.selected.maxPriceKnownCosts)));
- assert.match(slides.find(s=>s.id==='bonificaciones').body,/Pendiente/);
- assert.match(slides.find(s=>s.id==='decision').body,/presupuestos|ajustes/);
+ assert.match(slides.find(s=>s.id==='bonificaciones').body,/Estimación con reservas/);
+ assert.match(slides.find(s=>s.id==='decision').body,/reservas|ajustes/);
  const differentSeed=structuredClone(source);differentSeed.purchasePrice=310000;
  const second=calculateMortgageSearch(differentSeed,settings,options);
  assert.equal(second.selected.maxPriceKnownCosts,model.selected.maxPriceKnownCosts);
  const changed=structuredClone(source);changed.budget.foodMonthly+=123;
  const updated=buildLiveSlides({...calculateMortgageSearch(changed,settings,options),source:changed});
  assert.notEqual(updated.find(s=>s.id==='hoy').notes,slides.find(s=>s.id==='hoy').notes);
- assert.match(renderLivePresentation({...model,source},{index:10}),/Cuota hipotecaria disponible/);
+ assert.match(renderLivePresentation({...model,source},{index:10}),/hipoteca por límite mensual/);
 });
 
 test('an unknown external-home alternative blocks net bonus savings, not the quoted active plan',()=>{
@@ -123,8 +123,8 @@ test('the bonus script names only enabled policies for the selected bank',()=>{
  const model=fixture();model.selected.bankId='santander';model.selected.bankName='Santander';
  model.settings.offers={santander:{products:[{label:'Vida',enabled:false},{label:'Hogar',enabled:true},{label:'Protección de pagos',enabled:true}]}};
  let notes=buildLiveSlides(model).find(slide=>slide.id==='bonificaciones').notes;
- assert.match(notes,/coste de Hogar, Protección de pagos/);assert.doesNotMatch(notes,/Vida|coste de vida/);
+ assert.match(notes,/coste adicional de Hogar, Protección de pagos/);assert.doesNotMatch(notes,/Vida|coste de vida/);
  model.settings.offers.santander.products[0].enabled=true;
  notes=buildLiveSlides(model).find(slide=>slide.id==='bonificaciones').notes;
- assert.match(notes,/coste de Vida, Hogar, Protección de pagos/);
+ assert.match(notes,/coste adicional de Vida, Hogar, Protección de pagos/);
 });

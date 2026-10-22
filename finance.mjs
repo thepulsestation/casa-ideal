@@ -1,6 +1,6 @@
-import {calculatePreclosing} from './preclosing.mjs?v=34';
-import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=34';
-import {normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=34';
+import {calculatePreclosing} from './preclosing.mjs?v=37';
+import {calculatePersonalCommitments, normalizePersonalCommitments, calculatePublicTransport} from './personal-commitments.mjs?v=37';
+import {normalizeRentChange, currentRentForMonth} from './rent-schedule.mjs?v=37';
 /**
  * Housing purchase model. Money is EUR; annual loan rates are percentages (3.7),
  * loan-to-value and ownership shares are fractions (0.8 / 0.5), tax rates are
@@ -843,7 +843,7 @@ export function calculateScenario(input = {}, { includeSchedule = false, asOfMon
     ...(s.purchaseCosts.brokerQuotePending ? ['Honorarios de agencia sin presupuesto final'] : []),
     ...(purchaseFees === 0 ? ['Gastos de compraventa y tasación'] : []),
     ...(!s.budget.propertyCostsConfirmed ? ['IBI, residuos y comunidad / conservación sin comprobar'] : []),
-    ...(nonnegative(s.budget.maintenanceAnnual) === 0 ? ['Mantenimiento de la casa'] : []),
+    ...(nonnegative(s.budget.maintenanceAnnual) === 0 && !s.budget.ownershipProvisionCombined ? ['Mantenimiento de la casa'] : []),
     ...(nonnegative(s.budget.foodMonthly) === 0 ? ['Alimentación'] : []),
     ...(utilitiesMonthly === 0 ? ['Suministros'] : []),
     ...(motherTransfer.costsIncomplete ? ['Notaría de la donación'] : []),

@@ -12,6 +12,16 @@ test('the reserved profile requires both its exact identifier and kind',()=>{
  for(const row of [null,{}, {id:FAMILY_PROFILE_ID},{id:'home-a',kind:'family-budget'},{id:FAMILY_PROFILE_ID,kind:'home'}])assert.equal(isFamilyProfile(row),false);
 });
 
+test('the guided purchase rules follow the shared family without replacing a saved home',()=>{
+ const first=scenario();first.purchaseStory={revision:1,mode:'fixed',ownershipAnnual:2000,wasteAnnual:100,selectedCase:'principal'};
+ const profile=extractFamilyProfile(first),other=scenario();other.id='other-home';other.purchasePrice=220000;
+ assert.equal(isFamilyField('purchaseStory.ownershipAnnual'),true);
+ const applied=applyFamilyProfile(other,profile);
+ assert.deepEqual(applied.purchaseStory,first.purchaseStory);assert.equal(applied.purchasePrice,220000);
+ profile.purchaseStory.ownershipAnnual=1750;assert.equal(first.purchaseStory.ownershipAnnual,2000);
+ const preserved=extractFamilyProfile(other,profile);assert.equal(preserved.purchaseStory.ownershipAnnual,1750);
+});
+
 test('family fields include nested income and bill edits, while property costs stay per home',()=>{
  for(const path of ['budget.incomes.0.monthly','budget.householdIncomes.0.payments','budget.utilityBreakdown.energyMonthly','budget.foodMonthly','budget.currentRent','budget.storageMonthly','budget.debtRatioLimit','cash.savings','stress.unexpectedCost'])assert.equal(isFamilyField(path),true,path);
  for(const path of ['budget.ibiAnnual','budget.wasteAnnual','budget.communityMonthly','budget.maintenanceAnnual','budget.propertyCostsEstimated','budget.externalHomeInsuranceAnnual','budget.foodMonthlyExtra','cash.depositAmount','mortgage.years','familyLoan.rate','favorite','purchasePrice'])assert.equal(isFamilyField(path),false,path);
@@ -98,4 +108,20 @@ test('generic bank search and presentation share their settings without changing
  assert.equal(profile.homeSearch.offers.santander.fullRate,2.95);
  const budgetOnly=extractFamilyProfile(other,profile);
  assert.deepEqual(budgetOnly.homeSearch,profile.homeSearch);
+});
+
+
+test('linked unconfirmed property reserves follow shared rules without replacing community or receipts',()=>{
+ const first=scenario();first.purchaseStory={ownershipAnnual:1700,wasteAnnual:150};
+ const profile=extractFamilyProfile(first),home=scenario();
+ home.budget.propertyCostsConfirmed=false;home.budget.ownershipProvisionFromRules=true;
+ const applied=applyFamilyProfile(home,profile);
+ assert.equal(applied.budget.ibiAnnual,1700);assert.equal(applied.budget.wasteAnnual,150);
+ assert.equal(applied.budget.communityMonthly,25);assert.equal(applied.budget.maintenanceAnnual,0);
+ assert.equal(applied.budget.ownershipProvisionCombined,true);assert.equal(applied.budget.propertyCostsEstimated,true);
+ assert.equal(home.budget.ibiAnnual,850);
+ for(const overrides of [{propertyCostsConfirmed:true},{ownershipProvisionFromRules:false}]){
+  const manual=applyFamilyProfile({...home,budget:{...home.budget,...overrides}},profile);
+  assert.equal(manual.budget.ibiAnnual,850);assert.equal(manual.budget.maintenanceAnnual,300);
+ }
 });
