@@ -1,4 +1,4 @@
-import {euro as defaultEuro,num as defaultNum} from './format.mjs?v=37';
+import {euro as defaultEuro,num as defaultNum} from './format.mjs?v=38';
 
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
 const array=value=>Array.isArray(value)?value:[];

@@ -1,7 +1,7 @@
-import {normalizeScenario, calculateScenario, monthlyPayment} from './finance.mjs?v=37';
-import {calculateMonthlyCostComparison} from './budget-neutral.mjs?v=37';
-import {calculateFamilyTimeline, normalizeFamilyPlan} from './family-plan.mjs?v=37';
-import {calculatePersonalCommitments} from './personal-commitments.mjs?v=37';
+import {normalizeScenario, calculateScenario, monthlyPayment} from './finance.mjs?v=38';
+import {calculateMonthlyCostComparison} from './budget-neutral.mjs?v=38';
+import {calculateFamilyTimeline, normalizeFamilyPlan} from './family-plan.mjs?v=38';
+import {calculatePersonalCommitments} from './personal-commitments.mjs?v=38';
 
 // Generic market search: the reference is today's rental budget, never a saved
 // property's price, valuations, local bills, down payment or manual loan amount.

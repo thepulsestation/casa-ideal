@@ -1,6 +1,6 @@
-import {normalizeScenario, calculateScenario, monthlyPayment} from './finance.mjs?v=37';
-import {normalizeMortgageSearch, genericScenario, currentRentalBudget} from './mortgage-search.mjs?v=37';
-import {calculateMonthlyCostComparison} from './budget-neutral.mjs?v=37';
+import {normalizeScenario, calculateScenario, monthlyPayment} from './finance.mjs?v=38';
+import {normalizeMortgageSearch, genericScenario, currentRentalBudget} from './mortgage-search.mjs?v=38';
+import {calculateMonthlyCostComparison} from './budget-neutral.mjs?v=38';
 
 const CASES = [
   {id:'gift',title:'Mamá dona el dinero'},

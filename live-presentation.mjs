@@ -1,4 +1,4 @@
-import {buildPurchaseStorySlides} from './purchase-story-slides.mjs?v=37';
+import {buildPurchaseStorySlides} from './purchase-story-slides.mjs?v=38';
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
 const escape=value=>String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const currency=(value,d=0)=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR',minimumFractionDigits:d,maximumFractionDigits:d}).format(value);

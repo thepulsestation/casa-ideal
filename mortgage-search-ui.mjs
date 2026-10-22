@@ -1,4 +1,4 @@
-import {INSURANCE_REFERENCES} from './insurance-references.mjs?v=37';
+import {INSURANCE_REFERENCES} from './insurance-references.mjs?v=38';
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const escapeHtml = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const asArray = value => Array.isArray(value) ? value : [];

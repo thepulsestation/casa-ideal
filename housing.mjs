@@ -1,6 +1,6 @@
-import {getPropertyCostProvision} from './property-costs.mjs?v=37';
-import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=37';
-import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=37';
+import {getPropertyCostProvision} from './property-costs.mjs?v=38';
+import { DEFAULT_SCENARIO, normalizeScenario } from './finance.mjs?v=38';
+import {normalizeCommute,validateCommute,createCommuteForProperty} from './commute.mjs?v=38';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);

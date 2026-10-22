@@ -125,3 +125,15 @@ test('linked unconfirmed property reserves follow shared rules without replacing
   assert.equal(manual.budget.ibiAnnual,850);assert.equal(manual.budget.maintenanceAnnual,300);
  }
 });
+
+
+test('saved simulations share separately from real household rules and property data',()=>{
+ const first=scenario();first.simulationLibrary=[{id:'test-combination',name:'Hypothesis',settings:{mother:{cap:30000}}}];
+ const profile=extractFamilyProfile(first),other=scenario(),before=structuredClone(other);
+ const applied=applyFamilyProfile(other,profile);
+ assert.deepEqual(applied.simulationLibrary,first.simulationLibrary);
+ assert.deepEqual(applied.budget,before.budget);assert.deepEqual(applied.mortgage,before.mortgage);
+ applied.simulationLibrary[0].settings.mother.cap=60000;
+ assert.equal(profile.simulationLibrary[0].settings.mother.cap,30000);
+ const retained=extractFamilyProfile(other,profile);assert.deepEqual(retained.simulationLibrary,profile.simulationLibrary);
+});

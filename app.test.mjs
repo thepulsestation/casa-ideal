@@ -802,3 +802,39 @@ test('shared reserve edits immediately refresh the open linked home as well as t
  assert.equal(app.server.get(profile.id).data.purchaseStory.ownershipAnnual,1800);
  assert.equal(app.requests.filter(x=>x.method==='PATCH'&&x.query.get('id')==='eq.'+home.id).length,0);
 });
+
+
+test('simulator edits stay in the private working draft until an explicit named combination is saved',async()=>{
+ const home=savedHome('simulation-home');home.purchaseStory={referenceMonth:'2026-10',purchaseMonth:'2027-06'};home.familyPlan={purchaseMonth:'2027-06'};const original=structuredClone(home);
+ const app=boot({hash:buildFamilyHash('simulador',CODE),joined:true,scenarios:[home]});await app.loading;
+ assert.equal(parseFamilyRoute(app.location.hash).view,'simulador');assert.match(app.html,/simulation-results/);assert.equal(app.node('sim-evaluationMonth').value,'2027-06');
+ const field=app.node('field-simulationDraft.ibiAnnual');field.type='number';field.value='800';
+ await field.handlers.change({target:field});await app.flushTimers();
+ assert.equal(app.requests.filter(x=>['PATCH','POST'].includes(x.method)&&x.path==='/rest/v1/scenarios').length,0);
+ assert.deepEqual(app.server.get(home.id).data,original);
+ app.node('simulation-name').value='IBI reducido';await app.node('action-simulation-save').handlers.click();
+ const profile=app.server.get('casa-ideal-family-budget-v1').data;
+ assert.equal(profile.simulationLibrary.length,1);assert.equal(profile.simulationLibrary[0].settings.ibiAnnual,800);
+ assert.equal(profile.simulationLibrary[0].name,'IBI reducido');assert.deepEqual(profile.budget,extractFamilyProfile(home).budget);
+ assert.deepEqual(app.server.get(home.id).data,original);
+ const savedId=profile.simulationLibrary[0].id;
+ await app.node('action-simulation-reset').handlers.click();
+ await app.node('action-simulation-load'+savedId).handlers.click();
+ assert.match(app.html,/IBI reducido/);
+ app.node('simulation-name').value='Otra combinación';await app.node('action-simulation-save-copy').handlers.click();
+ assert.equal(app.server.get(profile.id).data.simulationLibrary.length,2);
+ await app.node('action-simulation-delete'+savedId).handlers.click();
+ assert.equal(app.server.get(profile.id).data.simulationLibrary.length,1);
+ assert.equal(app.server.get(profile.id).data.simulationLibrary[0].name,'Otra combinación');
+ assert.deepEqual(app.server.get(home.id).data,original);
+});
+
+test('invalid simulator input cannot be shared and does not change the real budget',async()=>{
+ const home=savedHome('simulation-invalid'),profile={...extractFamilyProfile(home),createdAt:home.createdAt,updatedAt:home.updatedAt};
+ const app=boot({hash:buildFamilyHash('simulador',CODE),joined:true,scenarios:[home,profile]});await app.loading;
+ const field=app.node('field-simulationDraft.motherYears');field.type='number';field.value='0';await field.handlers.change({target:field});
+ app.node('simulation-name').value='Invalid';await app.node('action-simulation-save').handlers.click();
+ assert.equal(app.requests.filter(x=>x.method==='PATCH'&&x.path==='/rest/v1/scenarios').length,0);
+ assert.deepEqual(app.server.get(profile.id).data,profile);
+ assert.match(app.html,/Revisa|plazo|Plazo/);
+});

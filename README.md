@@ -43,6 +43,14 @@ Los 2.000 €/año conjuntos y los 100 €/año de residuos son hipótesis edita
 
 La deuda bancaria de la madre y la entrega a sus hijos son operaciones distintas. Se comparan donación y préstamo familiar; la devolución interna entre hijos y madre no se duplica en el presupuesto consolidado. Se refleja por separado en el esfuerzo de los titulares hipotecarios. Las estimaciones fiscales requieren verificar residencia, parentesco, donaciones anteriores y los contratos definitivos.
 
+## Simulador de escenarios
+
+«Simulador de escenarios» conserva el presupuesto familiar como referencia y permite probar combinaciones independientes: buscar un precio máximo o comprobar una vivienda mediante precio o cuota objetivo. El objetivo puede ser mantener el gasto, permitir un aumento mensual o reservar un ahorro mínimo. Se distinguen el esfuerzo de los dos titulares, la financiación inicial y de arras, y el gasto y saldo de la familia.
+
+Los controles combinan IBI y reparaciones separados, residuos y comunidad, banco y productos bonificados con primas, las tres formas de devolución a mamá, capital y plazo de su préstamo, trabajo hipotético de la hermana y cambios de convivencia. La separación inicial de la reserva conjunta en IBI y reparaciones es una hipótesis que mantiene su total, no un recibo municipal. El trabajo de la hermana no aumenta los ingresos hipotecarios de los titulares. Los sueldos de personas que se marchan no se suman íntegros a la caja de la casa: solo sus aportaciones pactadas. Las reducciones de comida, agua y energía son importes editables; los pagos fijos permanecen. La situación de quien vive fuera sigue pendiente si no se han presupuestado sus gastos externos.
+
+Arrastrar las barras conserva el control y actualiza los resultados sin cambiar los datos reales. El borrador de trabajo se conserva solo en el navegador, separado por familia. «Guardar combinación» comparte una hipótesis con nombre en el perfil familiar; «Guardar copia» crea otra y cargar o eliminar una combinación no modifica las viviendas ni las reglas originales. Las combinaciones se recalculan con los ingresos y gastos familiares vigentes, por lo que no son una fotografía histórica. Las revisiones del perfil compartido evitan que un guardado antiguo sustituya cambios de otro dispositivo.
+
 ## Datos y familia
 
 Los borradores y viviendas se guardan en el navegador. Exportar JSON permite conservar una copia; contiene los datos financieros introducidos. No contiene sesiones ni invitaciones. El código público no incluye ingresos privados ni transcripciones.
